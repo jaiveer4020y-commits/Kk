@@ -1562,7 +1562,6 @@ async function source_rozgarlelo(type,id,season,episode){
 }
 
 async function fetchStream(type, id, season, episode) {
-
     const params = new URLSearchParams({
         id: String(id),
         type: String(type)
@@ -1573,26 +1572,23 @@ async function fetchStream(type, id, season, episode) {
         params.set("e", String(episode));
     }
 
-    const response = await fetch(
-        `/api/source?${params.toString()}`
-    );
+    const response = await fetch(`/api/source?${params.toString()}`);
 
     if (!response.ok) {
-        throw new Error(
-            `Source API HTTP ${response.status}`
-        );
+        throw new Error(`Source API HTTP ${response.status}`);
     }
 
     const data = await response.json();
 
+    // Validates response ok and isolates 'hls2' as the main playback URL
     if (!data.ok || !data.hls2) {
-        throw new Error(
-            data.error || "No HLS URL returned"
-        );
+        throw new Error(data.error || "No HLS URL (hls2) returned");
     }
 
+    console.log('[STREAM EXTRACTED] hls2:', data.hls2);
     return data.hls2;
 }
+
 
 /* =====================================================================
    TITLE FETCH
