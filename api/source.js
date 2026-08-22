@@ -1,13 +1,6 @@
-// api/source.js
-
 export const config = {
     runtime: "nodejs"
 };
-
-
-// ============================================================
-// CONFIG
-// ============================================================
 
 const HLS_API = "https://hls-proxy.vercel.app/api";
 
@@ -16,31 +9,20 @@ const USER_AGENT =
     "AppleWebKit/537.36 (KHTML, like Gecko) " +
     "Chrome/124.0.0.0 Mobile Safari/537.36";
 
-
 // ============================================================
-// FIND provider="unknown"
+// FIND PROVIDER "UNKNOWN"
 // ============================================================
 
 function findUnknownSource(obj) {
-
     if (Array.isArray(obj)) {
-
         for (const item of obj) {
-
-            const result =
-                findUnknownSource(item);
-
-            if (result) {
-                return result;
-            }
+            const result = findUnknownSource(item);
+            if (result) return result;
         }
-
         return null;
     }
 
-
     if (obj && typeof obj === "object") {
-
         if (
             obj.provider === "unknown" &&
             typeof obj.src === "string" &&
@@ -49,275 +31,82 @@ function findUnknownSource(obj) {
             return obj.src;
         }
 
-
         for (const value of Object.values(obj)) {
-
-            const result =
-                findUnknownSource(value);
-
-            if (result) {
-                return result;
-            }
+            const result = findUnknownSource(value);
+            if (result) return result;
         }
     }
 
     return null;
 }
 
-
 // ============================================================
-// BASE 36
-// ============================================================
-
-function toBase36(number) {
-
-    if (number === 0) {
-        return "0";
-    }
-
-    const chars =
-        "0123456789abcdefghijklmnopqrstuvwxyz";
-
-    let result = "";
-
-    while (number > 0) {
-
-        result =
-            chars[number % 36] +
-            result;
-
-        number =
-            Math.floor(number / 36);
-    }
-
-    return result;
-}
-
-
-// ============================================================
-// PACKER UNPACKER
+// BASE-62 UNPACKER
 // ============================================================
 
 function unpack(p, a, c, k) {
+    const baseUnpack = (num, radix) => {
+        const chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        return (num < radix ? "" : baseUnpack(Math.floor(num / radix), radix)) +
+               ((num %= radix) > 35 ? String.fromCharCode(num + 29) : num.toString(36));
+    };
 
-    for (
-        let i = c - 1;
-        i >= 0;
-        i--
-    ) {
-
-        if (
-            i < k.length &&
-            k[i]
-        ) {
-
-            const token =
-                toBase36(i);
-
-            const escapedToken =
-                token.replace(
-                    /[.*+?^${}()|[\]\\]/g,
-                    "\\$&"
-                );
-
-            const regex =
-                new RegExp(
-                    "\\b" +
-                    escapedToken +
-                    "\\b",
-                    "g"
-                );
-
-            p =
-                p.replace(
-                    regex,
-                    k[i]
-                );
+    while (c--) {
+        if (k[c]) {
+            const token = baseUnpack(c, a);
+            const regex = new RegExp("\\b" + token + "\\b", "g");
+            p = p.replace(regex, k[c]);
         }
     }
-
     return p;
 }
 
-
 // ============================================================
-// EXTRACT STRING LITERAL
-// ============================================================
-
-function decodeStringLiteral(value) {
-
-    value =
-        value.trim();
-
-
-    if (
-        value.length < 2
-    ) {
-        return value;
-    }
-
-
-    const quote =
-        value[0];
-
-
-    if (
-        quote !== '"' &&
-        quote !== "'"
-    ) {
-        return value;
-    }
-
-
-    let body =
-        value.slice(
-            1,
-            -1
-        );
-
-
-    // Basic JavaScript escape handling
-
-    body =
-        body.replace(
-            /\\x([0-9a-fA-F]{2})/g,
-            (_, hex) =>
-                String.fromCharCode(
-                    parseInt(hex, 16)
-                )
-        );
-
-
-    body =
-        body.replace(
-            /\\u([0-9a-fA-F]{4})/g,
-            (_, hex) =>
-                String.fromCharCode(
-                    parseInt(hex, 16)
-                )
-        );
-
-
-    body =
-        body.replace(
-            /\\n/g,
-            "\n"
-        );
-
-
-    body =
-        body.replace(
-            /\\r/g,
-            "\r"
-        );
-
-
-    body =
-        body.replace(
-            /\\t/g,
-            "\t"
-        );
-
-
-    body =
-        body.replace(
-            /\\(["'\\])/g,
-            "$1"
-        );
-
-
-    return body;
-}
-
-
-// ============================================================
-// FIND PACKED SCRIPT
+// FIND & PARSE PACKED SCRIPT
 // ============================================================
 
 function findPackedScript(html) {
-
-    const scriptRegex =
-        /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
-
+    const scriptRegex = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
     let match;
 
-
-    while (
-        (match =
-            scriptRegex.exec(html)) !== null
-    ) {
-
-        const text =
-            match[1];
-
-
-        if (
-            text &&
-            text.includes(
-                "eval(function(p,a,c,k,e,d)"
-            )
-        ) {
-
+    while ((match = scriptRegex.exec(html)) !== null) {
+        const text = match[1];
+        if (text && /eval\s*\(\s*function\s*\(\s*p\s*,\s*a\s*,\s*c\s*,\s*k/i.test(text)) {
             return text;
         }
     }
 
+    const rawMatch = html.match(/eval\s*\(\s*function\s*\(\s*p\s*,\s*a\s*,\s*c\s*,\s*k[\s\S]*?\}\s*\([\s\S]*?\)\s*\)/i);
+    if (rawMatch) return rawMatch[0];
 
     return null;
 }
 
-
-// ============================================================
-// PARSE PACKED SCRIPT
-// ============================================================
-
-// ============================================================
-// PARSE PACKED SCRIPT
-// ============================================================
-
 function decodePackedScript(jsCode) {
     console.log("[PACKER] Packed JWPlayer script found");
 
-    // Match the eval(function(p,a,c,k,e,d)... payload
-    const match = jsCode.match(/eval\(function\(p,a,c,k,e,r\b[\s\S]*?\}\(([\s\S]*?)\)\s*\)?/);
+    const evalMatch = jsCode.match(/eval\s*\(\s*function\s*\(\s*p\s*,\s*a\s*,\s*c\s*,\s*k[\s\S]*?\}\s*\(([\s\S]*?)\)\s*\)/i);
 
-    if (!match) {
+    if (!evalMatch) {
         throw new Error("Could not locate packed-script arguments.");
     }
 
-    const argsString = match[1].trim();
-
-    // Parse payload string 'p', radix 'a', count 'c', and dictionary array 'k'
+    const argsString = evalMatch[1].trim();
     let packed, radix, count, dictionary;
 
-    // Standard pattern: 'p',a,c,'k'.split('|') or 'p',a,c,k
-    const pattern = /^\s*(['"][\s\S]*?['"])\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(['"][\s\S]*?['"])\s*\.\s*split\(['"]\|['"]\)/;
-    const splitMatch = argsString.match(pattern);
-
-    if (splitMatch) {
-        packed = decodeStringLiteral(splitMatch[1]);
-        radix = parseInt(splitMatch[2], 10);
-        count = parseInt(splitMatch[3], 10);
-        dictionary = decodeStringLiteral(splitMatch[4]).split("|");
-    } else {
-        // Fallback: execute argument extraction via dynamic Function evaluation if static regex misses
-        try {
-            const parsedArgs = new Function(`return [${argsString}];`)();
-            packed = parsedArgs[0];
-            radix = parseInt(parsedArgs[1], 10);
-            count = parseInt(parsedArgs[2], 10);
-            dictionary = Array.isArray(parsedArgs[3]) 
-                ? parsedArgs[3] 
-                : String(parsedArgs[3]).split("|");
-        } catch (e) {
-            throw new Error("Could not identify packed-script parameters.");
-        }
+    try {
+        const parsedArgs = new Function(`return [${argsString}];`)();
+        packed = parsedArgs[0];
+        radix = parseInt(parsedArgs[1], 10);
+        count = parseInt(parsedArgs[2], 10);
+        dictionary = Array.isArray(parsedArgs[3])
+            ? parsedArgs[3]
+            : String(parsedArgs[3]).split("|");
+    } catch (e) {
+        throw new Error("Could not identify packed-script parameters: " + e.message);
     }
 
-    console.log("[PACKER] Packed length:", packed.length);
-    console.log("[PACKER] Radix:", radix);
-    console.log("[PACKER] Token count:", count);
-    console.log("[PACKER] Dictionary:", dictionary.length);
+    console.log("[PACKER] Radix:", radix, "| Token count:", count);
 
     const decoded = unpack(packed, radix, count, dictionary);
     console.log("[PACKER] Decoded size:", decoded.length);
@@ -325,570 +114,140 @@ function decodePackedScript(jsCode) {
     return decoded;
 }
 
-
 // ============================================================
-// EXTRACT hls2
+// EXTRACT HLS / SOURCES
 // ============================================================
 
 function extractHls2(decoded) {
-
     const patterns = [
-
         /"hls2"\s*:\s*"([^"]+)"/i,
-
         /'hls2'\s*:\s*'([^']+)'/i,
-
-        /hls2\s*[:=]\s*["']([^"']+)["']/i
-
+        /hls2\s*[:=]\s*["']([^"']+)["']/i,
+        /"file"\s*:\s*"([^"]+\.m3u8[^"]*)"/i,
+        /'file'\s*:\s*'([^']+\.m3u8[^']*)'/i
     ];
 
-
-    for (
-        const pattern of patterns
-    ) {
-
-        const match =
-            decoded.match(
-                pattern
-            );
-
-
-        if (match) {
-
-            return match[1];
-        }
+    for (const pattern of patterns) {
+        const match = decoded.match(pattern);
+        if (match) return match[1];
     }
-
 
     return null;
 }
 
-
-// ============================================================
-// RESOLVE RELATIVE URL
-// ============================================================
-
-function makeAbsoluteUrl(
-    value,
-    sourceUrl
-) {
-
+function makeAbsoluteUrl(value, sourceUrl) {
     try {
-
-        return new URL(
-            value,
-            sourceUrl
-        ).href;
-
+        return new URL(value, sourceUrl).href;
     } catch (_) {
-
         return value;
     }
 }
 
-
-// ============================================================
-// GET DYNAMIC SOURCE FROM HLS API
-// ============================================================
-
-async function getDynamicSource({
-    id,
-    type,
-    season,
-    episode
-}) {
-
-    const params =
-        new URLSearchParams();
-
-
-    params.set(
-        "id",
-        id
-    );
-
-
-    params.set(
-        "type",
-        type
-    );
-
-
-    if (
-        type === "tv"
-    ) {
-
-        params.set(
-            "s",
-            String(season)
-        );
-
-        params.set(
-            "e",
-            String(episode)
-        );
+async function getDynamicSource({ id, type, season, episode }) {
+    const params = new URLSearchParams({ id, type });
+    if (type === "tv") {
+        params.set("s", String(season));
+        params.set("e", String(episode));
     }
 
+    const apiUrl = `${HLS_API}?${params.toString()}`;
+    const response = await fetch(apiUrl, {
+        method: "GET",
+        headers: { "User-Agent": USER_AGENT, "Accept": "application/json" }
+    });
 
-    const apiUrl =
-        `${HLS_API}?${params.toString()}`;
+    if (!response.ok) throw new Error(`HLS API returned HTTP ${response.status}`);
 
-
-    console.log(
-        "[API] Request:",
-        apiUrl
-    );
-
-
-    const response =
-        await fetch(
-            apiUrl,
-            {
-                method: "GET",
-
-                headers: {
-                    "User-Agent":
-                        USER_AGENT,
-
-                    "Accept":
-                        "application/json"
-                }
-            }
-        );
-
-
-    if (!response.ok) {
-
-        throw new Error(
-            `HLS API returned HTTP ${response.status}`
-        );
-    }
-
-
-    const data =
-        await response.json();
-
-
-    console.log(
-        "[API] Response type:",
-        Array.isArray(data)
-            ? "array"
-            : typeof data
-    );
-
-
-    const source =
-        findUnknownSource(
-            data
-        );
-
-
-    if (!source) {
-
-        throw new Error(
-            "No provider='unknown' source found."
-        );
-    }
-
-
-    console.log(
-        "[API] Selected source:",
-        source
-    );
-
+    const data = await response.json();
+    const source = findUnknownSource(data);
+    if (!source) throw new Error("No provider='unknown' source found.");
 
     return source;
 }
 
+async function fetchSourcePage(sourceUrl) {
+    const parsed = new URL(sourceUrl);
+    const referer = `${parsed.protocol}//${parsed.host}/`;
 
-// ============================================================
-// FETCH SOURCE PAGE
-// ============================================================
+    const response = await fetch(sourceUrl, {
+        method: "GET",
+        headers: {
+            "User-Agent": USER_AGENT,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Referer": referer
+        }
+    });
 
-async function fetchSourcePage(
-    sourceUrl
-) {
+    if (!response.ok) throw new Error(`Source page returned HTTP ${response.status}`);
 
-    const parsed =
-        new URL(
-            sourceUrl
-        );
-
-
-    const referer =
-        `${parsed.protocol}//${parsed.host}/`;
-
-
-    console.log(
-        "[SOURCE] Fetching:",
-        sourceUrl
-    );
-
-
-    const response =
-        await fetch(
-            sourceUrl,
-            {
-                method: "GET",
-
-                headers: {
-                    "User-Agent":
-                        USER_AGENT,
-
-                    "Accept":
-                        "text/html," +
-                        "application/xhtml+xml," +
-                        "application/xml;q=0.9," +
-                        "*/*;q=0.8",
-
-                    "Referer":
-                        referer
-                }
-            }
-        );
-
-
-    if (!response.ok) {
-
-        throw new Error(
-            `Source page returned HTTP ${response.status}`
-        );
-    }
-
-
-    const html =
-        await response.text();
-
-
-    console.log(
-        "[SOURCE] HTML length:",
-        html.length
-    );
-
-
-    return {
-        html,
-        referer
-    };
+    const html = await response.text();
+    return { html, referer };
 }
 
+async function extractSource({ id, type, season, episode }) {
+    const sourceUrl = await getDynamicSource({ id, type, season, episode });
+    const { html, referer } = await fetchSourcePage(sourceUrl);
 
-// ============================================================
-// MAIN EXTRACTION
-// ============================================================
+    const packedScript = findPackedScript(html);
+    if (!packedScript) throw new Error("Packed JWPlayer script was not found.");
 
-async function extractSource({
-    id,
-    type,
-    season,
-    episode
-}) {
+    const decoded = decodePackedScript(packedScript);
+    const rawHls2 = extractHls2(decoded);
 
-    // --------------------------------------------------------
-    // 1. Dynamic source API
-    // --------------------------------------------------------
+    if (!rawHls2) throw new Error("No hls2 field was found.");
 
-    const sourceUrl =
-        await getDynamicSource({
-            id,
-            type,
-            season,
-            episode
-        });
+    const hls2 = makeAbsoluteUrl(rawHls2, sourceUrl);
 
-
-    // --------------------------------------------------------
-    // 2. Fetch selected source
-    // --------------------------------------------------------
-
-    const {
-        html,
-        referer
-    } =
-        await fetchSourcePage(
-            sourceUrl
-        );
-
-
-    // --------------------------------------------------------
-    // 3. Find packed JS
-    // --------------------------------------------------------
-
-    const packedScript =
-        findPackedScript(
-            html
-        );
-
-
-    if (!packedScript) {
-
-        throw new Error(
-            "Packed JWPlayer script was not found."
-        );
-    }
-
-
-    console.log(
-        "[PACKER] Script found"
-    );
-
-
-    // --------------------------------------------------------
-    // 4. Decode
-    // --------------------------------------------------------
-
-    const decoded =
-        decodePackedScript(
-            packedScript
-        );
-
-
-    // --------------------------------------------------------
-    // 5. Extract hls2
-    // --------------------------------------------------------
-
-    const rawHls2 =
-        extractHls2(
-            decoded
-        );
-
-
-    if (!rawHls2) {
-
-        throw new Error(
-            "No hls2 field was found."
-        );
-    }
-
-
-    const hls2 =
-        makeAbsoluteUrl(
-            rawHls2,
-            sourceUrl
-        );
-
-
-    console.log(
-        "[HLS2] Found:",
-        hls2
-    );
-
-
-    return {
-        source: sourceUrl,
-        referer,
-        hls2
-    };
+    return { source: sourceUrl, referer, hls2 };
 }
-
 
 // ============================================================
 // VERCEL HANDLER
 // ============================================================
 
-export default async function handler(
-    req,
-    res
-) {
+export default async function handler(req, res) {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "*");
 
-    // --------------------------------------------------------
-    // CORS
-    // --------------------------------------------------------
-
-    res.setHeader(
-        "Access-Control-Allow-Origin",
-        "*"
-    );
-
-    res.setHeader(
-        "Access-Control-Allow-Methods",
-        "GET, OPTIONS"
-    );
-
-    res.setHeader(
-        "Access-Control-Allow-Headers",
-        "*"
-    );
-
-
-    if (
-        req.method === "OPTIONS"
-    ) {
-
-        return res
-            .status(204)
-            .end();
-    }
-
-
-    if (
-        req.method !== "GET"
-    ) {
-
-        return res
-            .status(405)
-            .json({
-                ok: false,
-                error: "Method not allowed"
-            });
-    }
-
+    if (req.method === "OPTIONS") return res.status(204).end();
+    if (req.method !== "GET") return res.status(405).json({ ok: false, error: "Method not allowed" });
 
     try {
+        const { id, type = "tv", s, e } = req.query;
 
-        // ----------------------------------------------------
-        // Parameters
-        // ----------------------------------------------------
+        if (!id) return res.status(400).json({ ok: false, error: "Missing required parameter: id" });
+        if (type !== "tv" && type !== "movie") return res.status(400).json({ ok: false, error: "type must be tv or movie" });
 
-        const {
+        let season = null, episode = null;
+        if (type === "tv") {
+            if (s === undefined || e === undefined) {
+                return res.status(400).json({ ok: false, error: "TV requires s and e" });
+            }
+            season = Number(s);
+            episode = Number(e);
+            if (!Number.isInteger(season) || !Number.isInteger(episode)) {
+                return res.status(400).json({ ok: false, error: "s and e must be integers" });
+            }
+        }
+
+        const result = await extractSource({ id, type, season, episode });
+
+        return res.status(200).json({
+            ok: true,
             id,
-            type = "tv",
-            s,
-            e
-        } = req.query;
-
-
-        if (!id) {
-
-            return res
-                .status(400)
-                .json({
-                    ok: false,
-                    error:
-                        "Missing required parameter: id"
-                });
-        }
-
-
-        if (
-            type !== "tv" &&
-            type !== "movie"
-        ) {
-
-            return res
-                .status(400)
-                .json({
-                    ok: false,
-                    error:
-                        "type must be tv or movie"
-                });
-        }
-
-
-        let season = null;
-        let episode = null;
-
-
-        if (
-            type === "tv"
-        ) {
-
-            if (
-                s === undefined ||
-                e === undefined
-            ) {
-
-                return res
-                    .status(400)
-                    .json({
-                        ok: false,
-                        error:
-                            "TV requires s and e"
-                    });
-            }
-
-
-            season =
-                Number(s);
-
-            episode =
-                Number(e);
-
-
-            if (
-                !Number.isInteger(season) ||
-                !Number.isInteger(episode)
-            ) {
-
-                return res
-                    .status(400)
-                    .json({
-                        ok: false,
-                        error:
-                            "s and e must be integers"
-                    });
-            }
-        }
-
-
-        console.log(
-            "[SOURCE] Starting extraction:",
-            {
-                id,
-                type,
-                season,
-                episode
-            }
-        );
-
-
-        // ----------------------------------------------------
-        // Extraction
-        // ----------------------------------------------------
-
-        const result =
-            await extractSource({
-                id,
-                type,
-                season,
-                episode
-            });
-
-
-        // ----------------------------------------------------
-        // Response
-        // ----------------------------------------------------
-
-        return res
-            .status(200)
-            .json({
-                ok: true,
-
-                id,
-
-                type,
-
-                season,
-
-                episode,
-
-                source:
-                    result.source,
-
-                hls2:
-                    result.hls2,
-
-                referer:
-                    result.referer
-            });
-
-
+            type,
+            season,
+            episode,
+            source: result.source,
+            hls2: result.hls2,
+            referer: result.referer
+        });
     } catch (error) {
-
-        console.error(
-            "[SOURCE ERROR]",
-            error
-        );
-
-
-        return res
-            .status(500)
-            .json({
-                ok: false,
-
-                error:
-                    error?.message ||
-                    "Extraction failed"
-            });
+        console.error("[SOURCE ERROR]", error);
+        return res.status(500).json({
+            ok: false,
+            error: error?.message || "Extraction failed"
+        });
     }
 }
