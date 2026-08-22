@@ -66,50 +66,60 @@ function unpack(p, a, c, k) {
 // ============================================================
 
 function findPackedScript(html) {
+    console.log("[DEBUG] Searching for packed script in HTML...");
+    
+    // 1. Check <script> tags
     const scriptRegex = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
     let match;
 
     while ((match = scriptRegex.exec(html)) !== null) {
         const text = match[1];
         if (text && /eval\s*\(\s*function\s*\(\s*p\s*,\s*a\s*,\s*c\s*,\s*k/i.test(text)) {
+            console.log("[DEBUG] Found packed script in script tag.");
             return text;
         }
     }
 
+    // 2. Fallback to raw HTML regex search
     const rawMatch = html.match(/eval\s*\(\s*function\s*\(\s*p\s*,\s*a\s*,\s*c\s*,\s*k[\s\S]*?\}\s*\([\s\S]*?\)\s*\)/i);
-    if (rawMatch) return rawMatch[0];
+    if (rawMatch) {
+        console.log("[DEBUG] Found packed script in raw HTML fallback.");
+        return rawMatch[0];
+    }
 
+    console.log("[DEBUG] Failed to locate packed script. HTML Sample:", html.slice(0, 300));
     return null;
 }
 
 function decodePackedScript(jsCode) {
-    console.log("[PACKER] Packed JWPlayer script found");
+    console.log("[PACKER] Decoding packed script block...");
 
-    const evalMatch = jsCode.match(/eval\s*\(\s*function\s*\(\s*p\s*,\s*a\s*,\s*c\s*,\s*k[\s\S]*?\}\s*\(([\s\S]*?)\)\s*\)/i);
+    // Matches the core payload arguments inside eval(function(p,a,c,k,e,d){...}(...))
+    const evalMatch = jsCode.match(/eval\s*\(\s*function\s*\(\s*p\s*,\s*a\s*,\s*c\s*,\s*k[\s\S]*?\}\s*\(\s*(['"][\s\S]*?['"])\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(['"][\s\S]*?['"])\s*\.\s*split\(['"]\|['"]\)/i);
 
     if (!evalMatch) {
-        throw new Error("Could not locate packed-script arguments.");
+        console.error("[PACKER ERROR] Failed to match standard parameter structure. Full script snippet:", jsCode.slice(0, 300));
+        throw new Error("Could not locate packed-script parameters structure.");
     }
 
-    const argsString = evalMatch[1].trim();
-    let packed, radix, count, dictionary;
+    let packedRaw = evalMatch[1];
+    const radix = parseInt(evalMatch[2], 10);
+    const count = parseInt(evalMatch[3], 10);
+    let dictRaw = evalMatch[4];
 
-    try {
-        const parsedArgs = new Function(`return [${argsString}];`)();
-        packed = parsedArgs[0];
-        radix = parseInt(parsedArgs[1], 10);
-        count = parseInt(parsedArgs[2], 10);
-        dictionary = Array.isArray(parsedArgs[3])
-            ? parsedArgs[3]
-            : String(parsedArgs[3]).split("|");
-    } catch (e) {
-        throw new Error("Could not identify packed-script parameters: " + e.message);
-    }
+    // Clean leading/trailing quotes safely
+    const packed = packedRaw.slice(1, -1).replace(/\\'/g, "'").replace(/\\"/g, '"');
+    const dictionary = dictRaw.slice(1, -1).replace(/\\'/g, "'").replace(/\\"/g, '"').split("|");
 
-    console.log("[PACKER] Radix:", radix, "| Token count:", count);
+    console.log("[PACKER] Successfully extracted parameters:");
+    console.log(" -> Radix:", radix);
+    console.log(" -> Token count:", count);
+    console.log(" -> Dictionary size:", dictionary.length);
+    console.log(" -> Packed payload length:", packed.length);
 
     const decoded = unpack(packed, radix, count, dictionary);
-    console.log("[PACKER] Decoded size:", decoded.length);
+    console.log("[PACKER] Decoded output length:", decoded.length);
+    console.log("[PACKER] Decoded snippet:", decoded.slice(0, 300));
 
     return decoded;
 }
@@ -119,17 +129,23 @@ function decodePackedScript(jsCode) {
 // ============================================================
 
 function extractHls2(decoded) {
+    console.log("[DEBUG] Extracting stream URL from decoded script...");
+
     const patterns = [
         /"hls2"\s*:\s*"([^"]+)"/i,
         /'hls2'\s*:\s*'([^']+)'/i,
         /hls2\s*[:=]\s*["']([^"']+)["']/i,
         /"file"\s*:\s*"([^"]+\.m3u8[^"]*)"/i,
-        /'file'\s*:\s*'([^']+\.m3u8[^']*)'/i
+        /'file'\s*:\s*'([^']+\.m3u8[^']*)'/i,
+        /file\s*:\s*["']([^"']+)["']/i
     ];
 
     for (const pattern of patterns) {
         const match = decoded.match(pattern);
-        if (match) return match[1];
+        if (match) {
+            console.log("[DEBUG] Found match with pattern:", pattern);
+            return match[1];
+        }
     }
 
     return null;
@@ -151,6 +167,8 @@ async function getDynamicSource({ id, type, season, episode }) {
     }
 
     const apiUrl = `${HLS_API}?${params.toString()}`;
+    console.log("[DEBUG] Requesting HLS API:", apiUrl);
+
     const response = await fetch(apiUrl, {
         method: "GET",
         headers: { "User-Agent": USER_AGENT, "Accept": "application/json" }
@@ -159,15 +177,20 @@ async function getDynamicSource({ id, type, season, episode }) {
     if (!response.ok) throw new Error(`HLS API returned HTTP ${response.status}`);
 
     const data = await response.json();
-    const source = findUnknownSource(data);
-    if (!source) throw new Error("No provider='unknown' source found.");
+    console.log("[DEBUG] HLS API returned JSON:", JSON.stringify(data).slice(0, 200));
 
+    const source = findUnknownSource(data);
+    if (!source) throw new Error("No provider='unknown' source found in response.");
+
+    console.log("[DEBUG] Resolved target player page source URL:", source);
     return source;
 }
 
 async function fetchSourcePage(sourceUrl) {
     const parsed = new URL(sourceUrl);
     const referer = `${parsed.protocol}//${parsed.host}/`;
+
+    console.log("[DEBUG] Fetching player HTML page from:", sourceUrl);
 
     const response = await fetch(sourceUrl, {
         method: "GET",
@@ -181,6 +204,7 @@ async function fetchSourcePage(sourceUrl) {
     if (!response.ok) throw new Error(`Source page returned HTTP ${response.status}`);
 
     const html = await response.text();
+    console.log("[DEBUG] Source HTML fetched. Size:", html.length, "bytes.");
     return { html, referer };
 }
 
@@ -189,14 +213,15 @@ async function extractSource({ id, type, season, episode }) {
     const { html, referer } = await fetchSourcePage(sourceUrl);
 
     const packedScript = findPackedScript(html);
-    if (!packedScript) throw new Error("Packed JWPlayer script was not found.");
+    if (!packedScript) throw new Error("Packed JWPlayer script was not found in page HTML.");
 
     const decoded = decodePackedScript(packedScript);
     const rawHls2 = extractHls2(decoded);
 
-    if (!rawHls2) throw new Error("No hls2 field was found.");
+    if (!rawHls2) throw new Error("No hls2 or file stream field was found in unpacked script.");
 
     const hls2 = makeAbsoluteUrl(rawHls2, sourceUrl);
+    console.log("[DEBUG] Final resolved stream URL:", hls2);
 
     return { source: sourceUrl, referer, hls2 };
 }
@@ -231,6 +256,8 @@ export default async function handler(req, res) {
             }
         }
 
+        console.log(`[START] Extracting source for ID: ${id}, Type: ${type}, Season: ${season}, Episode: ${episode}`);
+
         const result = await extractSource({ id, type, season, episode });
 
         return res.status(200).json({
@@ -244,7 +271,7 @@ export default async function handler(req, res) {
             referer: result.referer
         });
     } catch (error) {
-        console.error("[SOURCE ERROR]", error);
+        console.error("[SOURCE ERROR]", error.message);
         return res.status(500).json({
             ok: false,
             error: error?.message || "Extraction failed"
