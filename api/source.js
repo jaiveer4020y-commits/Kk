@@ -271,121 +271,56 @@ function findPackedScript(html) {
 // PARSE PACKED SCRIPT
 // ============================================================
 
+// ============================================================
+// PARSE PACKED SCRIPT
+// ============================================================
+
 function decodePackedScript(jsCode) {
+    console.log("[PACKER] Packed JWPlayer script found");
 
-    console.log(
-        "[PACKER] Packed JWPlayer script found"
-    );
-
-
-    // Same basic structure as the Python version
-
-    const match =
-        jsCode.match(
-            /eval\(function\(p,a,c,k,e,d\)[\s\S]*?\}\(([\s\S]*)\)\)/
-        );
-
+    // Match the eval(function(p,a,c,k,e,d)... payload
+    const match = jsCode.match(/eval\(function\(p,a,c,k,e,r\b[\s\S]*?\}\(([\s\S]*?)\)\s*\)?/);
 
     if (!match) {
-
-        throw new Error(
-            "Could not locate packed-script arguments."
-        );
+        throw new Error("Could not locate packed-script arguments.");
     }
 
+    const argsString = match[1].trim();
 
-    const argumentsText =
-        match[1];
+    // Parse payload string 'p', radix 'a', count 'c', and dictionary array 'k'
+    let packed, radix, count, dictionary;
 
+    // Standard pattern: 'p',a,c,'k'.split('|') or 'p',a,c,k
+    const pattern = /^\s*(['"][\s\S]*?['"])\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(['"][\s\S]*?['"])\s*\.\s*split\(['"]\|['"]\)/;
+    const splitMatch = argsString.match(pattern);
 
-    /*
-     * Find:
-     *
-     * "packed",
-     * 36,
-     * 123,
-     * "a|b|c|d".split("|")
-     */
-
-
-    const splitMatch =
-        argumentsText.match(
-            /(['"](?:\\.|(?!\1)[\s\S])*?\1)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(['"](?:\\.|(?!\4)[\s\S])*?\4)\.split\(\s*['"]\|['"]\s*\)/
-        );
-
-
-    if (!splitMatch) {
-
-        throw new Error(
-            "Could not identify packed-script parameters."
-        );
+    if (splitMatch) {
+        packed = decodeStringLiteral(splitMatch[1]);
+        radix = parseInt(splitMatch[2], 10);
+        count = parseInt(splitMatch[3], 10);
+        dictionary = decodeStringLiteral(splitMatch[4]).split("|");
+    } else {
+        // Fallback: execute argument extraction via dynamic Function evaluation if static regex misses
+        try {
+            const parsedArgs = new Function(`return [${argsString}];`)();
+            packed = parsedArgs[0];
+            radix = parseInt(parsedArgs[1], 10);
+            count = parseInt(parsedArgs[2], 10);
+            dictionary = Array.isArray(parsedArgs[3]) 
+                ? parsedArgs[3] 
+                : String(parsedArgs[3]).split("|");
+        } catch (e) {
+            throw new Error("Could not identify packed-script parameters.");
+        }
     }
 
+    console.log("[PACKER] Packed length:", packed.length);
+    console.log("[PACKER] Radix:", radix);
+    console.log("[PACKER] Token count:", count);
+    console.log("[PACKER] Dictionary:", dictionary.length);
 
-    const packedLiteral =
-        splitMatch[1];
-
-    const radix =
-        Number(splitMatch[2]);
-
-    const count =
-        Number(splitMatch[3]);
-
-    const dictionaryLiteral =
-        splitMatch[4];
-
-
-    const packed =
-        decodeStringLiteral(
-            packedLiteral
-        );
-
-
-    const dictionaryString =
-        decodeStringLiteral(
-            dictionaryLiteral
-        );
-
-
-    const dictionary =
-        dictionaryString.split("|");
-
-
-    console.log(
-        "[PACKER] Packed length:",
-        packed.length
-    );
-
-    console.log(
-        "[PACKER] Radix:",
-        radix
-    );
-
-    console.log(
-        "[PACKER] Token count:",
-        count
-    );
-
-    console.log(
-        "[PACKER] Dictionary:",
-        dictionary.length
-    );
-
-
-    const decoded =
-        unpack(
-            packed,
-            radix,
-            count,
-            dictionary
-        );
-
-
-    console.log(
-        "[PACKER] Decoded size:",
-        decoded.length
-    );
-
+    const decoded = unpack(packed, radix, count, dictionary);
+    console.log("[PACKER] Decoded size:", decoded.length);
 
     return decoded;
 }
