@@ -1561,36 +1561,37 @@ async function source_rozgarlelo(type,id,season,episode){
     return finalUrl;
 }
 
-async function fetchStream(type,id,season,episode){
-    try{
-        const url =
-            await source_rozgarlelo(
-                type,
-                id,
-                season,
-                episode
-            );
+async function fetchStream(type, id, season, episode) {
 
-        if(!url){
-            console.error('[ROZGARLELO] Empty stream URL');
-            return null;
-        }
+    const params = new URLSearchParams({
+        id: String(id),
+        type: String(type)
+    });
 
-        return url;
+    if (type === "tv") {
+        params.set("s", String(season));
+        params.set("e", String(episode));
     }
-    catch(error){
-        console.error(
-            '[ROZGARLELO] Extraction failed:',
-            error
+
+    const response = await fetch(
+        `/api/source?${params.toString()}`
+    );
+
+    if (!response.ok) {
+        throw new Error(
+            `Source API HTTP ${response.status}`
         );
-
-        return null;
     }
-}
 
-if(typeof window !== 'undefined'){
-    window.source_rozgarlelo = source_rozgarlelo;
-    window.fetchStream = fetchStream;
+    const data = await response.json();
+
+    if (!data.ok || !data.hls2) {
+        throw new Error(
+            data.error || "No HLS URL returned"
+        );
+    }
+
+    return data.hls2;
 }
 
 /* =====================================================================
