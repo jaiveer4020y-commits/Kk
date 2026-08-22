@@ -1585,8 +1585,14 @@ async function fetchStream(type, id, season, episode) {
         throw new Error(data.error || "No HLS URL (hls2) returned");
     }
 
-    console.log('[STREAM EXTRACTED] hls2:', data.hls2);
-    return data.hls2;
+    console.log('[STREAM EXTRACTED RAW hls2]:', data.hls2);
+
+    // Wrap the raw hls2 CDN URL in the proxy to bypass CORS/Referer blocks
+    const proxiedHlsUrl = ROZGARLELO_PROXY + encodeURIComponent(data.hls2);
+
+    console.log('[PROXIED hls2 STREAM]:', proxiedHlsUrl);
+
+    return proxiedHlsUrl;
 }
 
 
