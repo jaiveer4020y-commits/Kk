@@ -7,7 +7,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <meta charset="UTF-8">
-    <title>MOVIEGOD-PLAYER</title>
+    <title>Player</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <style>
@@ -1588,11 +1588,11 @@ async function fetchStream(type, id, season, episode) {
     console.log('[STREAM EXTRACTED RAW hls2]:', data.hls2);
 
     // Wrap the raw hls2 CDN URL in the proxy to bypass CORS/Referer blocks
-    const streamUrl = ROZGARLELO_PROXY + encodeURIComponent(data.hls2);
+    const proxiedHlsUrl = ROZGARLELO_PROXY + encodeURIComponent(data.hls2) + 14168;
 
-    console.log('[PROXIED hls2 STREAM]:', streamUrl);
+    console.log('[PROXIED hls2 STREAM]:', proxiedHlsUrl);
 
-    return streamUrl;
+    return proxiedHlsUrl;
 }
 
 
