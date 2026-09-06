@@ -1572,7 +1572,11 @@ async function fetchStream(type, id, season, episode) {
         params.set("e", String(episode));
     }
 
-    const response = await fetch(`/api/source?${params.toString()}`);
+    const sourceUrl = `${window.location.origin}/api/source?${params.toString()}`;
+
+const proxyUrl = `https://workingg.vercel.app/api/proxy?url=${encodeURIComponent(sourceUrl)}`;
+
+const response = await fetch(proxyUrl);
 
     if (!response.ok) {
         throw new Error(`Source API HTTP ${response.status}`);
