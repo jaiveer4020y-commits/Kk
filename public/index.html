@@ -1644,73 +1644,148 @@ async function fetchAndSetTitle(type,id,season,episode){
 /* =====================================================================
    ROUTER
    ===================================================================== */
-async function resolveAndPlay(){
+/* =====================================================================
+   ROUTER
+   ===================================================================== */
+async function resolveAndPlay() {
 
     const path = window.location.pathname;
     const urlParams = new URLSearchParams(window.location.search);
     const urlParam = urlParams.get('url');
 
-    console.log('[ROUTER] Path:',path);
+    console.log('[ROUTER] Path:', path);
 
-    /* Direct ?url= stream */
-    if(urlParam){
+    /* ================================================================
+       DIRECT ?url= STREAM
+       Example:
+       /player?url=https%3A%2F%2Fexample.com%2Fstream.m3u8
+       ================================================================ */
+    if (urlParam) {
+
+        console.log('[ROUTER] Direct stream URL:', urlParam);
+
         showLoader();
+
         revokeAllSubtitleBlobs();
-        _proxySubtitles={};
-        initHlsPlayer(urlParam);
+        _proxySubtitles = {};
+
+        try {
+            initHlsPlayer(urlParam);
+        } catch (error) {
+            console.error('[ROUTER] Direct stream error:', error);
+
+            hideLoader();
+
+            displayError(
+                'Could not load the direct stream.'
+            );
+        }
+
         return;
     }
 
-    /* Movie:
+
+    /* ================================================================
+       MOVIE
+       
+       Supported:
        /movie/tt42346527
        /movie/123456
-    */
+       ================================================================ */
+
     const mv = path.match(/\/movie\/([^/?#]+)/i);
 
-    if(mv){
-        const id = mv[1];
+    if (mv) {
 
-        console.log('[ROUTER] Movie ID:',id);
+        const id = decodeURIComponent(mv[1]);
+
+        console.log('[ROUTER] Movie ID:', id);
 
         showLoader();
 
-        try{
-            const streamUrl =
-                await fetchStream(
-                    'movie',
-                    id,
-                    null,
-                    null
+        try {
+
+            /*
+             * fetchStream signature:
+             *
+             * fetchStream(type, id, title, season, episode)
+             *
+             * Movie:
+             * type    = movie
+             * id      = movie ID
+             * title   = null
+             * season  = null
+             * episode = null
+             */
+
+            const streamUrl = await fetchStream(
+                'movie',
+                id,
+                null,
+                null,
+                null
+            );
+
+            console.log(
+                '[ROUTER] Movie stream:',
+                streamUrl
+            );
+
+            if (!streamUrl) {
+                throw new Error(
+                    'No movie stream URL returned'
                 );
-
-            if(streamUrl){
-                revokeAllSubtitleBlobs();
-                _proxySubtitles={};
-
-                initHlsPlayer(streamUrl);
-
-                /* Title fetch is optional; a failed title request
-                   must never prevent playback. */
-                fetchAndSetTitle('movie',id).catch(()=>{});
-
-                _pendingSubtitleArgs={
-                    type:'movie',
-                    tmdbId:/^\d+$/.test(id) ? id : null,
-                    season:null,
-                    episode:null
-                };
             }
-            else{
-                hideLoader();
-                displayError(
-                    'Could not load movie stream.'
+
+            revokeAllSubtitleBlobs();
+            _proxySubtitles = {};
+
+            initHlsPlayer(streamUrl);
+
+
+            /* --------------------------------------------------------
+               TITLE
+               -------------------------------------------------------- */
+
+            fetchAndSetTitle(
+                'movie',
+                id
+            ).catch(error => {
+                console.warn(
+                    '[ROUTER] Movie title failed:',
+                    error
                 );
-            }
+            });
+
+
+            /* --------------------------------------------------------
+               SUBTITLE ARGUMENTS
+               -------------------------------------------------------- */
+
+            _pendingSubtitleArgs = {
+                type: 'movie',
+
+                tmdbId:
+                    /^\d+$/.test(id)
+                        ? id
+                        : null,
+
+                season: null,
+                episode: null
+            };
+
         }
-        catch(error){
-            console.error('[ROUTER] Movie error:',error);
+        catch (error) {
+
+            console.error(
+                '[ROUTER] Movie error:',
+                error
+            );
+
             hideLoader();
+
             displayError(
+                error?.message ||
                 'Movie stream extraction failed.'
             );
         }
@@ -1718,74 +1793,131 @@ async function resolveAndPlay(){
         return;
     }
 
-    /* TV:
-       /tv/1399/S1/E1
-    */
-    const tv =
-        path.match(
-            /\/tv\/([^/]+)\/S(\d+)\/E(\d+)/i
-        );
 
-    if(tv){
-        const id = tv[1];
+    /* ================================================================
+       TV
+       
+       Supported:
+       /tv/1399/S1/E1
+       /tv/1399/S2/E5
+       ================================================================ */
+
+    const tv = path.match(
+        /\/tv\/([^/]+)\/S(\d+)\/E(\d+)/i
+    );
+
+    if (tv) {
+
+        const id = decodeURIComponent(tv[1]);
+
         const season = Number(tv[2]);
         const episode = Number(tv[3]);
 
         console.log(
             '[ROUTER] TV:',
             id,
-            'S'+season,
-            'E'+episode
+            'S' + season,
+            'E' + episode
         );
 
         showLoader();
 
-        try{
-            const streamUrl =
-                await fetchStream(
-                    'tv',
-                    id,
-                    season,
-                    episode
+        try {
+
+            /*
+             * IMPORTANT:
+             *
+             * fetchStream(type, id, title, season, episode)
+             *
+             * Therefore TV MUST be:
+             *
+             * fetchStream(
+             *     'tv',
+             *     id,
+             *     null,
+             *     season,
+             *     episode
+             * )
+             */
+
+            const streamUrl = await fetchStream(
+                'tv',
+                id,
+                null,
+                season,
+                episode
+            );
+
+            console.log(
+                '[ROUTER] TV stream:',
+                streamUrl
+            );
+
+            if (!streamUrl) {
+                throw new Error(
+                    'No episode stream URL returned'
                 );
-
-            if(streamUrl){
-                revokeAllSubtitleBlobs();
-                _proxySubtitles={};
-
-                initHlsPlayer(streamUrl);
-
-                fetchAndSetTitle(
-                    'tv',
-                    id,
-                    season,
-                    episode
-                ).catch(()=>{});
-
-                _pendingSubtitleArgs={
-                    type:'tv',
-                    tmdbId:id,
-                    season:season,
-                    episode:episode
-                };
             }
-            else{
-                hideLoader();
-                displayError(
-                    'Could not load episode stream.'
+
+            revokeAllSubtitleBlobs();
+            _proxySubtitles = {};
+
+            initHlsPlayer(streamUrl);
+
+
+            /* --------------------------------------------------------
+               TITLE
+               -------------------------------------------------------- */
+
+            fetchAndSetTitle(
+                'tv',
+                id,
+                season,
+                episode
+            ).catch(error => {
+                console.warn(
+                    '[ROUTER] TV title failed:',
+                    error
                 );
-            }
+            });
+
+
+            /* --------------------------------------------------------
+               SUBTITLE ARGUMENTS
+               -------------------------------------------------------- */
+
+            _pendingSubtitleArgs = {
+                type: 'tv',
+                tmdbId: id,
+                season: season,
+                episode: episode
+            };
+
         }
-        catch(error){
-            console.error('[ROUTER] TV error:',error);
+        catch (error) {
+
+            console.error(
+                '[ROUTER] TV error:',
+                error
+            );
+
             hideLoader();
+
             displayError(
+                error?.message ||
                 'Episode stream extraction failed.'
             );
         }
 
         return;
     }
+
+
+    /* ================================================================
+       INVALID ROUTE
+       ================================================================ */
+
+    hideLoader();
 
     displayError(
         'Invalid player URL. Use /movie/IMDbID or /tv/TMDBID/S1/E1'
