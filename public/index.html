@@ -1564,7 +1564,8 @@ async function source_rozgarlelo(type,id,season,episode){
 async function fetchStream(type, id, season, episode) {
     const params = new URLSearchParams({
         id: String(id),
-        type: String(type)
+        
+        title: String(title),
     });
 
     if (type === "tv") {
@@ -1572,7 +1573,7 @@ async function fetchStream(type, id, season, episode) {
         params.set("e", String(episode));
     }
 
-    const sourceUrl = `${window.location.origin}/api/source?${params.toString()}`;
+    const sourceUrl = `${window.location.origin}/api/source?source=castle${params.toString()}`;
 
 const proxyUrl = `https://workingg.vercel.app/api/proxy?url=${encodeURIComponent(sourceUrl)}`;
 
@@ -1585,14 +1586,14 @@ const response = await fetch(proxyUrl);
     const data = await response.json();
 
     // Validates response ok and isolates 'hls2' as the main playback URL
-    if (!data.ok || !data.hls2) {
+    if (!data.ok || !data.videoUrl) {
         throw new Error(data.error || "No HLS URL (hls2) returned");
     }
 
-    console.log('[STREAM EXTRACTED RAW hls2]:', data.hls2);
+    console.log('[STREAM EXTRACTED RAW hls2]:', data.videoUrl);
 
     // Wrap the raw hls2 CDN URL in the proxy to bypass CORS/Referer blocks
-    const proxiedHlsUrl = ROZGARLELO_PROXY + encodeURIComponent(data.hls2);
+    const proxiedHlsUrl =  (data.videoUrl);
 
     console.log('[PROXIED hls2 STREAM]:', proxiedHlsUrl);
 
