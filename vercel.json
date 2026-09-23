@@ -1,7 +1,6 @@
 {
   "rewrites": [
-    {  "env": {
-    "CASTLE_KEY": "@castle_key" }
+    {  
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
