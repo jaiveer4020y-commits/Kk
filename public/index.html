@@ -1564,38 +1564,30 @@ async function source_rozgarlelo(type,id,season,episode){
 /* =====================================================================
    FETCH STREAM
    ===================================================================== */
+/* =====================================================================
+   FETCH STREAM
+   ===================================================================== */
 
-async function fetchStream(type, id, title, season, episode) {
+async function fetchStream(type, id, title, season, episode, source = "both") {
+
     try {
 
         const params = new URLSearchParams();
 
-        /*
-         * Required parameters
-         */
-        params.set("source", "both");
+        params.set("source", source || "both");
         params.set("type", type);
         params.set("id", id);
 
-        /*
-         * Title for both Movie + TV
-         */
-        if (title) {
-            params.set("title", title);
+        if (season != null) {
+            params.set("s", String(season));
         }
 
-        /*
-         * TV parameters
-         */
-        if (type === "tv") {
+        if (episode != null) {
+            params.set("e", String(episode));
+        }
 
-            if (season != null) {
-                params.set("s", String(season));
-            }
-
-            if (episode != null) {
-                params.set("e", String(episode));
-            }
+        if (title) {
+            params.set("title", title);
         }
 
         const sourceUrl =
@@ -1621,9 +1613,7 @@ async function fetchStream(type, id, title, season, episode) {
             );
         }
 
-        const videoUrl = data.videoUrl;
-
-        if (!videoUrl) {
+        if (!data.videoUrl) {
             throw new Error(
                 "No videoUrl in response"
             );
@@ -1631,7 +1621,7 @@ async function fetchStream(type, id, title, season, episode) {
 
         console.log(
             "[STREAM EXTRACTED]:",
-            videoUrl
+            data.videoUrl
         );
 
         console.log(
@@ -1639,7 +1629,7 @@ async function fetchStream(type, id, title, season, episode) {
             data.source
         );
 
-        return videoUrl;
+        return data.videoUrl;
 
     } catch (error) {
 
@@ -1649,107 +1639,6 @@ async function fetchStream(type, id, title, season, episode) {
         );
 
         throw error;
-    }
-}
-
-
-/* =====================================================================
-   TITLE FETCH
-   ===================================================================== */
-
-async function fetchAndSetTitle(
-    type,
-    id,
-    season,
-    episode
-) {
-
-    try {
-
-        let title = "";
-        let mobileTitle = "";
-
-        if (type === "movie") {
-
-            const r =
-                await fetch(
-                    `${TMDB_PROXY}/movie/${encodeURIComponent(id)}`
-                );
-
-            if (r.ok) {
-
-                const d = await r.json();
-
-                title =
-                    d.title ||
-                    d.original_title ||
-                    "";
-
-                mobileTitle = title;
-            }
-
-        } else {
-
-            const [sr, er] =
-                await Promise.all([
-
-                    fetch(
-                        `${TMDB_PROXY}/tv/${encodeURIComponent(id)}`
-                    ),
-
-                    fetch(
-                        `${TMDB_PROXY}/tv/${encodeURIComponent(id)}/season/${season}/episode/${episode}`
-                    )
-                ]);
-
-            const series =
-                sr.ok
-                    ? await sr.json()
-                    : {};
-
-            const ep =
-                er.ok
-                    ? await er.json()
-                    : {};
-
-            title = [
-                series.name,
-                `S${season}:E${episode}`,
-                ep.name
-            ]
-                .filter(Boolean)
-                .join(" ");
-
-            mobileTitle =
-                `S${season}:E${episode} "${ep.name || series.name || ""}"`;
-        }
-
-        document
-            .getElementById("title-main-text")
-            .textContent = title;
-
-        document
-            .getElementById("mobile-title-main")
-            .textContent = mobileTitle;
-
-        document.title =
-            title ||
-            document.title;
-
-        /*
-         * Return the actual title so resolveAndPlay()
-         * can send it to /api/source.
-         */
-        return title;
-
-    } catch (e) {
-
-        console.warn(
-            "[TITLE FETCH ERROR]:",
-            e
-        );
-
-        return "";
     }
 }
 
@@ -1768,12 +1657,47 @@ async function resolveAndPlay() {
             window.location.search
         );
 
+    /*
+     * Read parameters directly from page URL.
+     *
+     * Example:
+     *
+     * ?source=both
+     * &type=tv
+     * &title=The
+     */
+
+    const querySource =
+        urlParams.get("source") || "both";
+
+    const queryType =
+        urlParams.get("type");
+
+    const queryTitle =
+        urlParams.get("title") || "";
+
     const urlParam =
         urlParams.get("url");
+
 
     console.log(
         "[ROUTER] Path:",
         path
+    );
+
+    console.log(
+        "[ROUTER] Query source:",
+        querySource
+    );
+
+    console.log(
+        "[ROUTER] Query type:",
+        queryType
+    );
+
+    console.log(
+        "[ROUTER] Query title:",
+        queryTitle
     );
 
 
@@ -1782,11 +1706,6 @@ async function resolveAndPlay() {
        ================================================================ */
 
     if (urlParam) {
-
-        console.log(
-            "[ROUTER] Direct stream URL:",
-            urlParam
-        );
 
         showLoader();
 
@@ -1817,9 +1736,8 @@ async function resolveAndPlay() {
 
     /* ================================================================
        MOVIE
-
-       /movie/123456
-       /movie/tt1234567
+       
+       /movie/123456?source=both&type=movie&title=The%20Conjuring
        ================================================================ */
 
     const mv =
@@ -1832,85 +1750,86 @@ async function resolveAndPlay() {
         const id =
             decodeURIComponent(mv[1]);
 
+        /*
+         * Prefer title from URL.
+         * If there is no title parameter,
+         * try TMDB as fallback.
+         */
+
+        let title = queryTitle;
+
         console.log(
             "[ROUTER] Movie ID:",
             id
         );
+
+        console.log(
+            "[ROUTER] Movie title from URL:",
+            title
+        );
+
 
         showLoader();
 
         try {
 
             /*
-             * First get the movie title.
+             * Only use TMDB fallback if URL
+             * did not provide a title.
              */
-            let title = "";
 
-            try {
+            if (!title) {
 
-                const titleResponse =
-                    await fetch(
-                        `${TMDB_PROXY}/movie/${encodeURIComponent(id)}`
+                try {
+
+                    const r =
+                        await fetch(
+                            `${TMDB_PROXY}/movie/${encodeURIComponent(id)}`
+                        );
+
+                    if (r.ok) {
+
+                        const d =
+                            await r.json();
+
+                        title =
+                            d.title ||
+                            d.original_title ||
+                            "";
+                    }
+
+                } catch (e) {
+
+                    console.warn(
+                        "[ROUTER] TMDB movie title failed:",
+                        e
                     );
-
-                if (titleResponse.ok) {
-
-                    const movie =
-                        await titleResponse.json();
-
-                    title =
-                        movie.title ||
-                        movie.original_title ||
-                        "";
                 }
-
-            } catch (titleError) {
-
-                console.warn(
-                    "[ROUTER] Movie title fetch failed:",
-                    titleError
-                );
             }
 
 
             console.log(
-                "[ROUTER] Movie title:",
+                "[ROUTER] Final movie title:",
                 title
             );
 
 
-            /*
-             * Fetch stream with title.
-             *
-             * Example:
-             *
-             * /api/source?source=both
-             * &type=movie
-             * &id=123456
-             * &title=The%20Conjuring
-             */
             const streamUrl =
                 await fetchStream(
                     "movie",
                     id,
                     title,
                     null,
-                    null
+                    null,
+                    querySource
                 );
 
 
             if (!streamUrl) {
-
                 throw new Error(
                     "No movie stream URL returned"
                 );
             }
-
-
-            console.log(
-                "[ROUTER] Movie stream:",
-                streamUrl
-            );
 
 
             revokeAllSubtitleBlobs();
@@ -1919,18 +1838,6 @@ async function resolveAndPlay() {
             initHlsPlayer(streamUrl);
 
 
-            /*
-             * Update page title/UI.
-             */
-            fetchAndSetTitle(
-                "movie",
-                id
-            ).catch(() => {});
-
-
-            /*
-             * Subtitle arguments.
-             */
             _pendingSubtitleArgs = {
 
                 type: "movie",
@@ -1941,8 +1848,10 @@ async function resolveAndPlay() {
                         : null,
 
                 season: null,
+
                 episode: null
             };
+
 
         } catch (error) {
 
@@ -1965,9 +1874,8 @@ async function resolveAndPlay() {
 
     /* ================================================================
        TV
-
-       /tv/1399/S1/E1
-       /tv/1399/S2/E5
+       
+       /tv/tmdb/S1/E1?source=both&type=tv&title=The
        ================================================================ */
 
     const tv =
@@ -1987,6 +1895,23 @@ async function resolveAndPlay() {
             Number(tv[3]);
 
 
+        /*
+         * IMPORTANT:
+         *
+         * Use ?title= directly.
+         *
+         * This fixes:
+         *
+         * /tv/tmdb/S1/E1?title=The
+         *
+         * instead of trying:
+         *
+         * /tv/tmdb
+         */
+
+        let title = queryTitle;
+
+
         console.log(
             "[ROUTER] TV:",
             id,
@@ -1994,96 +1919,80 @@ async function resolveAndPlay() {
             "E" + episode
         );
 
+        console.log(
+            "[ROUTER] TV title from URL:",
+            title
+        );
+
+
         showLoader();
 
         try {
 
             /*
-             * Fetch series + episode information
-             * BEFORE requesting the stream.
+             * If URL has no title, use TMDB
+             * as a fallback.
              */
-            let title = "";
 
-            try {
+            if (!title) {
 
-                const [seriesResponse, episodeResponse] =
-                    await Promise.all([
+                try {
 
-                        fetch(
+                    const seriesResponse =
+                        await fetch(
                             `${TMDB_PROXY}/tv/${encodeURIComponent(id)}`
-                        ),
+                        );
 
-                        fetch(
-                            `${TMDB_PROXY}/tv/${encodeURIComponent(id)}/season/${season}/episode/${episode}`
-                        )
-                    ]);
+                    if (seriesResponse.ok) {
 
+                        const series =
+                            await seriesResponse.json();
 
-                const series =
-                    seriesResponse.ok
-                        ? await seriesResponse.json()
-                        : {};
+                        title =
+                            series.name ||
+                            series.original_name ||
+                            "";
+                    }
 
-                const ep =
-                    episodeResponse.ok
-                        ? await episodeResponse.json()
-                        : {};
+                } catch (e) {
 
-
-                /*
-                 * Title sent to API.
-                 *
-                 * Here we use the series title.
-                 *
-                 * Example:
-                 * Game of Thrones
-                 */
-                title =
-                    series.name ||
-                    series.original_name ||
-                    "";
-
-
-                console.log(
-                    "[ROUTER] TV title:",
-                    title
-                );
-
-                console.log(
-                    "[ROUTER] Episode:",
-                    ep.name || ""
-                );
-
-            } catch (titleError) {
-
-                console.warn(
-                    "[ROUTER] TV title fetch failed:",
-                    titleError
-                );
+                    console.warn(
+                        "[ROUTER] TMDB TV title failed:",
+                        e
+                    );
+                }
             }
 
 
+            console.log(
+                "[ROUTER] Final TV title:",
+                title
+            );
+
+
             /*
-             * Fetch stream with:
+             * API request will now contain:
              *
+             * source=both
              * type=tv
-             * id=1399
+             * id=tmdb
              * s=1
              * e=1
-             * title=Game%20of%20Thrones
+             * title=The
              */
+
             const streamUrl =
                 await fetchStream(
                     "tv",
                     id,
                     title,
                     season,
-                    episode
+                    episode,
+                    querySource
                 );
 
 
             if (!streamUrl) {
-
                 throw new Error(
                     "No episode stream URL returned"
                 );
@@ -2103,8 +2012,10 @@ async function resolveAndPlay() {
 
 
             /*
-             * Update page title/UI.
+             * Update UI title if your existing
+             * function is available.
              */
+
             fetchAndSetTitle(
                 "tv",
                 id,
@@ -2113,9 +2024,6 @@ async function resolveAndPlay() {
             ).catch(() => {});
 
 
-            /*
-             * Subtitle arguments.
-             */
             _pendingSubtitleArgs = {
 
                 type: "tv",
@@ -2126,6 +2034,7 @@ async function resolveAndPlay() {
 
                 episode: episode
             };
+
 
         } catch (error) {
 
@@ -2153,7 +2062,7 @@ async function resolveAndPlay() {
     hideLoader();
 
     displayError(
-        "Invalid player URL. Use /movie/IMDbID or /tv/TMDBID/S1/E1"
+        "Invalid player URL. Use /movie/ID or /tv/ID/S1/E1"
     );
 }
 /* =====================================================================
