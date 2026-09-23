@@ -1561,45 +1561,64 @@ async function source_rozgarlelo(type,id,season,episode){
     return finalUrl;
 }
 
-async function fetchStream(type, id, season, episode) {
-    const params = new URLSearchParams({
-        id: String(id),
+async function fetchStream(type, id, title, season, episode) {
+    try {
+        // Build parameters
+        const params = new URLSearchParams();
         
-        title: String(title),
-    });
+        params.set("source", "both");  // Try both sources
+        params.set("type", type);       // "tv" or "movie"
+        
+        if (title) {
+            params.set("title", title);  // For Castle API
+        }
+        
+        if (id) {
+            params.set("id", id);        // For Modiplay API
+        }
+        
+        if (type === "tv") {
+            if (season) params.set("s", String(season));
+            if (episode) params.set("e", String(episode));
+        }
 
-    if (type === "tv") {
-        params.set("s", String(season));
-        params.set("e", String(episode));
+        // Direct call to your API (no proxy needed!)
+        const sourceUrl = `${window.location.origin}/api/source?${params.toString()}`;
+        
+        console.log('[API REQUEST]:', sourceUrl);
+
+        const response = await fetch(sourceUrl);
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        console.log('[API RESPONSE]:', data);
+
+        // Check for success (not 'ok')
+        if (!data.success) {
+            throw new Error(data.error || "No video URL returned");
+        }
+
+        // Get video URL (not 'hls2')
+        const videoUrl = data.videoUrl;
+
+        if (!videoUrl) {
+            throw new Error("No videoUrl in response");
+        }
+
+        console.log('[STREAM EXTRACTED]:', videoUrl);
+        console.log('[SOURCE]:', data.source);
+
+        return videoUrl;
+
+    } catch (error) {
+        console.error('[STREAM ERROR]:', error.message);
+        throw error;
     }
-
-    const sourceUrl = `${window.location.origin}/api/source?source=castle${params.toString()}`;
-
-const proxyUrl = `https://workingg.vercel.app/api/proxy?url=${encodeURIComponent(sourceUrl)}`;
-
-const response = await fetch(proxyUrl);
-
-    if (!response.ok) {
-        throw new Error(`Source API HTTP ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    // Validates response ok and isolates 'hls2' as the main playback URL
-    if (!data.ok || !data.videoUrl) {
-        throw new Error(data.error || "No HLS URL (hls2) returned");
-    }
-
-    console.log('[STREAM EXTRACTED RAW hls2]:', data.videoUrl);
-
-    // Wrap the raw hls2 CDN URL in the proxy to bypass CORS/Referer blocks
-    const proxiedHlsUrl =  (data.videoUrl);
-
-    console.log('[PROXIED hls2 STREAM]:', proxiedHlsUrl);
-
-    return proxiedHlsUrl;
 }
-
 
 /* =====================================================================
    TITLE FETCH
