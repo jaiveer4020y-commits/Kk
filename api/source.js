@@ -1,806 +1,581 @@
-export const config = {
-    runtime: "nodejs"
-};
+"""
+Unified Video Extractor API - Castle (Source 1) + Modiplay (Source 2)
+Compatible with Vercel serverless deployment
+"""
 
-const IQSMARTGAMES_API = "https://streams.iqsmartgames.com/embed";
+import base64
+import json
+import requests
+import re
+from urllib.parse import quote_plus, urlencode, unquote
+from Crypto.Cipher import AES
 
-const IQ_KEY =
-    "e11a7debaaa4f5d25b671706ffe4d2acb56efbd4";
 
-const USER_AGENT =
-    "Mozilla/5.0 (Linux; Android 10; K) " +
-    "AppleWebKit/537.36 (KHTML, like Gecko) " +
-    "Chrome/124.0.0.0 Mobile Safari/537.36";
+# ============================================================
+# CONFIGURATION
+# ============================================================
 
-// ============================================================
-// FETCH HTML
-// ============================================================
+CASTLE_API = "https://api.hlowb.com"
+MODIPLAY_API = "https://rozgarlelo.modiplay.xyz"
+WORKINGG_PROXY = "https://workingg.vercel.app/api/proxy"
 
-async function fetchPage(url, referer = null) {
-    console.log(`[FETCH] ${url}`);
+CASTLE_CHANNEL = "IndiaA"
+CASTLE_CLIENT_TYPE = "1"
+CASTLE_LANG = "en-US"
+CASTLE_PACKAGE_NAME = "com.external.castle"
+CASTLE_KEY = "PUT_YOUR_CASTLE_KEY_HERE"
 
-    const headers = {
-        "User-Agent": USER_AGENT,
-        "Accept":
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-    };
+MODIPLAY_USER_AGENT = (
+    "Mozilla/5.0 (Linux; Android 10; K) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Mobile Safari/537.36"
+)
 
-    if (referer) {
-        headers.Referer = referer;
-    }
-
-    const response = await fetch(url, {
-        method: "GET",
-        headers,
-        redirect: "follow"
-    });
-
-    const html = await response.text();
-
-    console.log(
-        `[FETCH] HTTP ${response.status} | ${html.length} bytes | ${response.url}`
-    );
-
-    if (!response.ok) {
-        throw new Error(
-            `HTTP ${response.status} while fetching ${url}`
-        );
-    }
-
-    return {
-        html,
-        finalUrl: response.url
-    };
+CASTLE_HEADERS = {
+    "User-Agent": "okhttp/4.9.3",
+    "Accept": "application/json",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Connection": "Keep-Alive",
+    "Referer": CASTLE_API + "/",
 }
 
-// ============================================================
-// NORMALIZE URL
-// ============================================================
-
-function makeAbsoluteUrl(value, baseUrl) {
-    if (!value) return null;
-
-    try {
-        return new URL(value, baseUrl).href;
-    } catch {
-        return value;
-    }
+MODIPLAY_HEADERS = {
+    "User-Agent": MODIPLAY_USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
-// ============================================================
-// EXTRACT iframe#player
-//
-// Handles:
-//
-// <iframe id="player" ... src="...">
-//
-// and:
-//
-// <iframe src="..." ... id="player">
-//
-// and single/double quotes.
-// ============================================================
 
-function extractPlayerIframe(html, baseUrl) {
-    console.log("[IFRAME] Looking for iframe#player");
-
-    // First find every iframe opening tag.
-    const iframeRegex = /<iframe\b[^>]*>/gi;
-
-    let match;
-
-    while ((match = iframeRegex.exec(html)) !== null) {
-        const tag = match[0];
-
-        // id="player" / id='player'
-        const idMatch = tag.match(
-            /\bid\s*=\s*["']player["']/i
-        );
-
-        if (!idMatch) {
-            continue;
-        }
-
-        // src="..." / src='...'
-        const srcMatch = tag.match(
-            /\bsrc\s*=\s*["']([^"']+)["']/i
-        );
-
-        if (!srcMatch) {
-            console.log(
-                "[IFRAME] Found #player but it has no src"
-            );
-
-            return null;
-        }
-
-        const rawSrc = srcMatch[1].trim();
-        const absoluteSrc = makeAbsoluteUrl(
-            rawSrc,
-            baseUrl
-        );
-
-        console.log(
-            "[IFRAME] #player:",
-            absoluteSrc
-        );
-
-        return absoluteSrc;
-    }
-
-    console.log(
-        "[IFRAME] iframe#player was not found"
-    );
-
-    return null;
-}
-
-// ============================================================
-// FALLBACK: FIRST iframe inside player-container
-//
-// This is deliberately separate from the primary #player
-// extraction so that changes to the surrounding div don't
-// break the parser.
-// ============================================================
-
-function extractFirstIframeFromPlayerContainer(
-    html,
-    baseUrl
-) {
-    console.log(
-        "[IFRAME] Trying player-container fallback"
-    );
-
-    /*
-     * Instead of trying to match nested <div>s, locate the
-     * player-container text and then search for the iframe.
-     */
-
-    const containerIndex = html.search(
-        /class\s*=\s*["'][^"']*\bplayer-container\b[^"']*["']/i
-    );
-
-    if (containerIndex === -1) {
-        console.log(
-            "[IFRAME] player-container class not found"
-        );
-
-        return null;
-    }
-
-    /*
-     * Search a reasonable section following the container.
-     * The normal page structure puts the iframe immediately
-     * inside this container.
-     */
-
-    const section = html.slice(
-        containerIndex,
-        containerIndex + 10000
-    );
-
-    const iframeMatch = section.match(
-        /<iframe\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/i
-    );
-
-    if (!iframeMatch) {
-        console.log(
-            "[IFRAME] No iframe found after player-container"
-        );
-
-        return null;
-    }
-
-    const url = makeAbsoluteUrl(
-        iframeMatch[1].trim(),
-        baseUrl
-    );
-
-    console.log(
-        "[IFRAME] player-container iframe:",
-        url
-    );
-
-    return url;
-}
-
-// ============================================================
-// EXTRACT ALL IFRAMES
-// ============================================================
-
-function extractAllIframes(html, baseUrl) {
-    const result = [];
-
-    const iframeRegex = /<iframe\b[^>]*>/gi;
-
-    let match;
-
-    while ((match = iframeRegex.exec(html)) !== null) {
-        const tag = match[0];
-
-        const idMatch = tag.match(
-            /\bid\s*=\s*["']([^"']+)["']/i
-        );
-
-        const srcMatch = tag.match(
-            /\bsrc\s*=\s*["']([^"']+)["']/i
-        );
-
-        if (!srcMatch) continue;
-
-        result.push({
-            id: idMatch ? idMatch[1] : null,
-            src: makeAbsoluteUrl(
-                srcMatch[1].trim(),
-                baseUrl
-            ),
-            raw: tag
-        });
-    }
-
-    return result;
-}
-
-// ============================================================
-// EXTRACT SERVER ITEMS
-// ============================================================
-
-function extractVideoServerLinks(html, baseUrl) {
-    console.log("[SERVERS] Extracting server metadata");
-
-    const servers = [];
-
-    /*
-     * Find each <li ... class="server-item"...>
-     *
-     * We don't require data-link/data-source-key to appear
-     * in a particular attribute order.
-     */
-
-    const liRegex =
-        /<li\b[^>]*\bclass\s*=\s*["'][^"']*\bserver-item\b[^"']*["'][^>]*>[\s\S]*?<\/li>/gi;
-
-    let match;
-
-    while ((match = liRegex.exec(html)) !== null) {
-        const block = match[0];
-
-        // data-link
-        const linkMatch = block.match(
-            /\bdata-link\s*=\s*["']([^"']+)["']/i
-        );
-
-        // data-source-key
-        const keyMatch = block.match(
-            /\bdata-source-key\s*=\s*["']([^"']+)["']/i
-        );
-
-        // class
-        const classMatch = block.match(
-            /\bclass\s*=\s*["']([^"']+)["']/i
-        );
-
-        const classes = classMatch
-            ? classMatch[1]
-            : "";
-
-        const isActive =
-            /\bactive\b/i.test(classes);
-
-        /*
-         * Try several ways of getting the displayed name.
-         */
-
-        let name = null;
-
-        const serverNameMatch = block.match(
-            /<div\b[^>]*\bclass\s*=\s*["'][^"']*\bserver-name\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i
-        );
-
-        if (serverNameMatch) {
-            name = serverNameMatch[1]
-                .replace(/<[^>]+>/g, "")
-                .replace(/\s+/g, " ")
-                .trim();
-        }
-
-        if (!name) {
-            const altMatch = block.match(
-                /<img\b[^>]*\balt\s*=\s*["']([^"']+)["']/i
-            );
-
-            if (altMatch) {
-                name = altMatch[1].trim();
-            }
-        }
-
-        if (!name) {
-            name = "Unknown";
-        }
-
-        servers.push({
-            name,
-            link: linkMatch
-                ? makeAbsoluteUrl(
-                      linkMatch[1].trim(),
-                      baseUrl
-                  )
-                : null,
-            sourceKey: keyMatch
-                ? keyMatch[1].trim()
-                : null,
-            isActive
-        });
-    }
-
-    console.log(
-        `[SERVERS] Found ${servers.length} server entries`
-    );
-
-    return servers;
-}
-
-// ============================================================
-// EXTRACT TRACKS / SUBTITLES
-// ============================================================
-
-function extractTracks(html, baseUrl) {
-    const tracks = [];
-
-    const trackRegex =
-        /<track\b[^>]*>/gi;
-
-    let match;
-
-    while ((match = trackRegex.exec(html)) !== null) {
-        const tag = match[0];
-
-        const srcMatch = tag.match(
-            /\bsrc\s*=\s*["']([^"']+)["']/i
-        );
-
-        if (!srcMatch) continue;
-
-        const kindMatch = tag.match(
-            /\bkind\s*=\s*["']([^"']+)["']/i
-        );
-
-        const labelMatch = tag.match(
-            /\blabel\s*=\s*["']([^"']+)["']/i
-        );
-
-        const srclangMatch = tag.match(
-            /\bsrclang\s*=\s*["']([^"']+)["']/i
-        );
-
-        tracks.push({
-            src: makeAbsoluteUrl(
-                srcMatch[1],
-                baseUrl
-            ),
-            kind: kindMatch
-                ? kindMatch[1]
-                : null,
-            label: labelMatch
-                ? labelMatch[1]
-                : null,
-            srclang: srclangMatch
-                ? srclangMatch[1]
-                : null
-        });
-    }
-
-    return tracks;
-}
-
-// ============================================================
-// IQSMARTGAMES FLOW
-// ============================================================
-
-async function extractIqsmartgames({
-    id,
-    type,
-    season,
-    episode
-}) {
-    console.log(
-        `[START] IQSMARTGAMES ${type} ${id}`
-    );
-
-    // --------------------------------------------------------
-    // STEP 1
-    // --------------------------------------------------------
-
-    let embedUrl;
-
-    if (type === "tv") {
-        embedUrl =
-            `${IQSMARTGAMES_API}/tv/` +
-            `${encodeURIComponent(id)}/` +
-            `${encodeURIComponent(season)}/` +
-            `${encodeURIComponent(episode)}` +
-            `?key=${IQ_KEY}`;
-    } else {
-        embedUrl =
-            `${IQSMARTGAMES_API}/movie/` +
-            `${encodeURIComponent(id)}` +
-            `?key=${IQ_KEY}`;
-    }
-
-    console.log(
-        "[STEP 1] Embed:",
-        embedUrl
-    );
-
-    const embedResponse =
-        await fetchPage(embedUrl);
-
-    const embedHtml =
-        embedResponse.html;
-
-    // --------------------------------------------------------
-    // DEBUG
-    // --------------------------------------------------------
-
-    console.log(
-        "[DEBUG] player-container present:",
-        /player-container/i.test(embedHtml)
-    );
-
-    console.log(
-        "[DEBUG] iframe#player present:",
-        /<iframe\b[^>]*\bid=["']player["']/i.test(
-            embedHtml
+# ============================================================
+# CASTLE - AES DECRYPTION
+# ============================================================
+
+def decrypt_castle(cipher_text, security_key):
+    """AES-128-CBC decryption for Castle API responses"""
+    pepper = b"T!BgJB"
+    key_words = base64.b64decode(security_key)
+    combined = key_words + pepper
+    key_material = combined[:16]
+    cipher_bytes = base64.b64decode(cipher_text)
+    cipher = AES.new(key_material, AES.MODE_CBC, iv=key_material)
+    decrypted = cipher.decrypt(cipher_bytes)
+    
+    # PKCS5/PKCS7 padding removal
+    padding = decrypted[-1]
+    if 1 <= padding <= 16:
+        decrypted = decrypted[:-padding]
+    
+    return decrypted.decode("utf-8")
+
+
+# ============================================================
+# CASTLE - SECURITY KEY
+# ============================================================
+
+def get_castle_security_key():
+    """Fetch security key from Castle API"""
+    url = (
+        f"{CASTLE_API}/v0.1/system/getSecurityKey/1"
+        f"?channel={CASTLE_CHANNEL}"
+        f"&clientType={CASTLE_CLIENT_TYPE}"
+        f"&lang={CASTLE_LANG}"
+    )
+    
+    r = requests.get(url, headers=CASTLE_HEADERS, timeout=20)
+    r.raise_for_status()
+    
+    data = r.json()
+    security_key = data.get("data")
+    
+    if not security_key:
+        raise Exception("Security key not found")
+    
+    return security_key
+
+
+# ============================================================
+# CASTLE - API REQUEST
+# ============================================================
+
+def castle_request(url, security_key, method="GET", body=None):
+    """Make encrypted request to Castle API"""
+    
+    if method == "POST":
+        r = requests.post(
+            url,
+            headers={**CASTLE_HEADERS, "Content-Type": "application/json"},
+            json=body,
+            timeout=30
         )
-    );
+    else:
+        r = requests.get(url, headers=CASTLE_HEADERS, timeout=30)
+    
+    r.raise_for_status()
+    
+    response = r.text.strip()
+    cipher_text = response
+    
+    try:
+        temp = json.loads(response)
+        if isinstance(temp, dict) and isinstance(temp.get("data"), str):
+            cipher_text = temp["data"]
+    except:
+        pass
+    
+    decrypted = decrypt_castle(cipher_text, security_key)
+    result = json.loads(decrypted)
+    
+    if isinstance(result, dict) and isinstance(result.get("data"), dict):
+        return result["data"]
+    
+    return result
 
-    // --------------------------------------------------------
-    // STEP 2
-    // --------------------------------------------------------
-    // PRIMARY METHOD:
-    // directly locate iframe#player.
-    // --------------------------------------------------------
 
-    console.log(
-        "[STEP 2] Extracting iframe#player..."
-    );
+# ============================================================
+# CASTLE - SEARCH
+# ============================================================
 
-    let proPlayerUrl =
-        extractPlayerIframe(
-            embedHtml,
-            embedResponse.finalUrl
-        );
+def castle_search(title, security_key):
+    """Search for movie/series on Castle"""
+    encoded_title = quote_plus(title)
+    
+    url = (
+        f"{CASTLE_API}/film-api/v1.1.0/movie/searchByKeyword"
+        f"?channel={CASTLE_CHANNEL}"
+        f"&clientType={CASTLE_CLIENT_TYPE}"
+        f"&keyword={encoded_title}"
+        f"&lang={CASTLE_LANG}"
+        f"&mode=1"
+        f"&packageName={CASTLE_PACKAGE_NAME}"
+        f"&page=1"
+        f"&size=30"
+    )
+    
+    data = castle_request(url, security_key)
+    rows = data.get("rows", [])
+    
+    if not rows:
+        raise Exception("No search results")
+    
+    movie_id = ""
+    for row in rows:
+        row_title = row.get("title") or row.get("name") or ""
+        if title.lower() in row_title.lower() or row_title.lower() in title.lower():
+            movie_id = str(row.get("id") or row.get("redirectId") or row.get("redirectIdStr") or "")
+            if movie_id:
+                break
+    
+    if not movie_id and rows:
+        first = rows[0]
+        movie_id = str(first.get("id") or first.get("redirectId") or first.get("redirectIdStr") or "")
+    
+    if not movie_id:
+        raise Exception("Movie ID not found")
+    
+    return movie_id
 
-    // --------------------------------------------------------
-    // FALLBACK
-    // --------------------------------------------------------
 
-    if (!proPlayerUrl) {
-        console.log(
-            "[STEP 2] Primary extraction failed."
-        );
+# ============================================================
+# CASTLE - GET DETAILS
+# ============================================================
 
-        proPlayerUrl =
-            extractFirstIframeFromPlayerContainer(
-                embedHtml,
-                embedResponse.finalUrl
-            );
+def castle_get_details(movie_id, security_key):
+    """Get movie/series details"""
+    url = (
+        f"{CASTLE_API}/film-api/v1.9.9/movie"
+        f"?channel={CASTLE_CHANNEL}"
+        f"&clientType={CASTLE_CLIENT_TYPE}"
+        f"&lang={CASTLE_LANG}"
+        f"&movieId={movie_id}"
+        f"&packageName={CASTLE_PACKAGE_NAME}"
+    )
+    
+    return castle_request(url, security_key)
+
+
+# ============================================================
+# CASTLE - GET SEASON EPISODES
+# ============================================================
+
+def castle_get_season_details(season_movie_id, security_key):
+    """Get episodes for a specific season"""
+    url = (
+        f"{CASTLE_API}/film-api/v1.9.9/movie"
+        f"?channel={CASTLE_CHANNEL}"
+        f"&clientType={CASTLE_CLIENT_TYPE}"
+        f"&lang={CASTLE_LANG}"
+        f"&movieId={season_movie_id}"
+        f"&packageName={CASTLE_PACKAGE_NAME}"
+    )
+    
+    return castle_request(url, security_key)
+
+
+# ============================================================
+# CASTLE - GET VIDEO
+# ============================================================
+
+def castle_get_video(movie_id, episode_id, security_key):
+    """Get video URL for episode/movie"""
+    url = (
+        f"{CASTLE_API}/film-api/v2.0.1/movie/getVideo2"
+        f"?clientType={CASTLE_CLIENT_TYPE}"
+        f"&packageName={CASTLE_PACKAGE_NAME}"
+        f"&channel={CASTLE_CHANNEL}"
+        f"&lang={CASTLE_LANG}"
+    )
+    
+    body = {
+        "mode": "1",
+        "appMarket": "GuanWang",
+        "clientType": CASTLE_CLIENT_TYPE,
+        "woolUser": "false",
+        "apkSignKey": CASTLE_KEY,
+        "androidVersion": "13",
+        "movieId": movie_id,
+        "episodeId": episode_id,
+        "isNewUser": "true",
+        "resolution": "2",
+        "packageName": CASTLE_PACKAGE_NAME,
     }
+    
+    return castle_request(url, security_key, method="POST", body=body)
 
-    if (!proPlayerUrl) {
-        /*
-         * Useful diagnostic output.
-         */
 
-        const playerIndex =
-            embedHtml.search(
-                /player-container/i
-            );
+# ============================================================
+# CASTLE - EXTRACT
+# ============================================================
 
-        if (playerIndex !== -1) {
-            console.log(
-                "[DEBUG] player-container HTML:"
-            );
-
-            console.log(
-                embedHtml.slice(
-                    Math.max(0, playerIndex - 300),
-                    playerIndex + 2500
-                )
-            );
+def extract_castle(title, season=None, episode=None):
+    """Extract video from Castle API"""
+    try:
+        security_key = get_castle_security_key()
+        movie_id = castle_search(title, security_key)
+        details = castle_get_details(movie_id, security_key)
+        
+        effective_movie_id = movie_id
+        
+        # Handle TV series
+        if season is not None and episode is not None:
+            seasons = details.get("seasons", [])
+            if seasons:
+                season_data = None
+                for s in seasons:
+                    if s.get("number") == season:
+                        season_data = s
+                        break
+                
+                if season_data and season_data.get("movieId") != movie_id:
+                    season_movie_id = season_data.get("movieId")
+                    details = castle_get_season_details(season_movie_id, security_key)
+                    effective_movie_id = season_movie_id
+        
+        # Get episode
+        episodes = details.get("episodes", [])
+        if not episodes:
+            raise Exception("No episodes found")
+        
+        episode_data = None
+        if season is not None and episode is not None:
+            for ep in episodes:
+                if ep.get("number") == episode:
+                    episode_data = ep
+                    break
+        else:
+            episode_data = episodes[0]
+        
+        if not episode_data:
+            raise Exception("Episode not found")
+        
+        episode_id = episode_data.get("id")
+        
+        # Get video
+        video_data = castle_get_video(effective_movie_id, episode_id, security_key)
+        
+        return {
+            "success": True,
+            "source": "castle",
+            "title": title,
+            "season": season,
+            "episode": episode,
+            "videoUrl": video_data.get("videoUrl"),
+            "subtitles": video_data.get("subtitles", []),
+        }
+    
+    except Exception as e:
+        return {
+            "success": False,
+            "source": "castle",
+            "error": str(e),
         }
 
-        throw new Error(
-            "Could not extract iframe#player from embed page"
-        );
-    }
 
-    console.log(
-        "[STEP 2] PRO PLAYER:",
-        proPlayerUrl
-    );
+# ============================================================
+# MODIPLAY - FETCH PAGE
+# ============================================================
 
-    // --------------------------------------------------------
-    // STEP 3
-    // --------------------------------------------------------
+def modiplay_fetch_page(url, referer=None):
+    """Fetch HTML from URL"""
+    headers = {**MODIPLAY_HEADERS}
+    if referer:
+        headers["Referer"] = referer
+    
+    r = requests.get(url, headers=headers, allow_redirects=True, timeout=20)
+    r.raise_for_status()
+    
+    return r.text, r.url
 
-    console.log(
-        "[STEP 3] Requesting PRO player..."
-    );
 
-    const proResponse =
-        await fetchPage(
-            proPlayerUrl,
-            embedResponse.finalUrl
-        );
+# ============================================================
+# MODIPLAY - EXTRACT PLAYER IFRAME
+# ============================================================
 
-    const proHtml =
-        proResponse.html;
+def modiplay_extract_player_iframe(html, base_url):
+    """Extract iframe#playerFrame or id=playerFrame"""
+    
+    # Look for iframe with id="playerFrame"
+    iframe_regex = r'<iframe\b[^>]*\bid\s*=\s*["\']playerFrame["\'][^>]*>'
+    match = re.search(iframe_regex, html, re.IGNORECASE)
+    
+    if not match:
+        # Try alternative id pattern
+        iframe_regex = r'<iframe\b[^>]*>'
+        matches = re.finditer(iframe_regex, html, re.IGNORECASE)
+        for m in matches:
+            tag = m.group(0)
+            if 'playerFrame' in tag or 'playerContainer' in tag:
+                match = m
+                break
+    
+    if not match:
+        return None
+    
+    tag = match.group(0)
+    src_match = re.search(r'\bsrc\s*=\s*["\']([^"\']+)["\']', tag, re.IGNORECASE)
+    
+    if not src_match:
+        return None
+    
+    src = src_match.group(1).strip()
+    
+    # Make absolute URL
+    if src.startswith('/'):
+        from urllib.parse import urlparse, urlunparse
+        parsed = urlparse(base_url)
+        src = f"{parsed.scheme}://{parsed.netloc}{src}"
+    elif not src.startswith('http'):
+        src = base_url.rstrip('/') + '/' + src
+    
+    return src
 
-    // --------------------------------------------------------
-    // STEP 4
-    // --------------------------------------------------------
 
-    console.log(
-        "[STEP 4] Extracting all player iframes..."
-    );
+# ============================================================
+# MODIPLAY - EXTRACT DIRECT SRC
+# ============================================================
 
-    const proIframes =
-        extractAllIframes(
-            proHtml,
-            proResponse.finalUrl
-        );
+def modiplay_extract_direct_src(html):
+    """Extract directSrc variable from JavaScript"""
+    
+    # Look for var directSrc="..."
+    match = re.search(r'var\s+directSrc\s*=\s*["\']([^"\']+)["\']', html)
+    
+    if match:
+        src = match.group(1).strip()
+        # Decode if URL encoded
+        src = unquote(src)
+        return src
+    
+    # Fallback: look for src= pattern
+    match = re.search(r'var\s+src\s*=\s*["\']([^"\']+)["\']', html)
+    if match:
+        src = match.group(1).strip()
+        src = unquote(src)
+        return src
+    
+    return None
 
-    console.log(
-        "[STEP 4] iframe count:",
-        proIframes.length
-    );
 
-    /*
-     * Find vidFrame specifically.
-     */
+# ============================================================
+# MODIPLAY - EXTRACT
+# ============================================================
 
-    const vidFrame =
-        proIframes.find(
-            x => x.id === "vidFrame"
-        ) || null;
-
-    /*
-     * Also keep every iframe because this is useful when
-     * the page changes its markup.
-     */
-
-    console.log(
-        "[STEP 4] vidFrame:",
-        vidFrame
-    );
-
-    // --------------------------------------------------------
-    // STEP 5
-    // --------------------------------------------------------
-
-    console.log(
-        "[STEP 5] Extracting server metadata..."
-    );
-
-    const servers =
-        extractVideoServerLinks(
-            proHtml,
-            proResponse.finalUrl
-        );
-
-    // --------------------------------------------------------
-    // STEP 6
-    // --------------------------------------------------------
-
-    console.log(
-        "[STEP 6] Extracting tracks..."
-    );
-
-    const tracks =
-        extractTracks(
-            proHtml,
-            proResponse.finalUrl
-        );
-
-    // --------------------------------------------------------
-    // RESULT
-    // --------------------------------------------------------
-
-    return {
-        id,
-        type,
-        season,
-        episode,
-
-        embed: {
-            url: embedUrl,
-            finalUrl: embedResponse.finalUrl
-        },
-
-        proPlayer: {
-            url: proPlayerUrl,
-            finalUrl: proResponse.finalUrl
-        },
-
-        videoPlayer: {
-            iframe: vidFrame,
-            allIframes: proIframes
-        },
-
-        servers,
-
-        activeServer:
-            servers.find(
-                server => server.isActive
-            ) || null,
-
-        tracks,
-
-        metadata: {
-            embedHtmlLength:
-                embedHtml.length,
-
-            proHtmlLength:
-                proHtml.length,
-
-            iframeCount:
-                proIframes.length,
-
-            serverCount:
-                servers.length,
-
-            trackCount:
-                tracks.length
-        },
-
-        extractedAt:
-            new Date().toISOString()
-    };
-}
-
-// ============================================================
-// VERCEL HANDLER
-// ============================================================
-
-export default async function handler(req, res) {
-    res.setHeader(
-        "Access-Control-Allow-Origin",
-        "*"
-    );
-
-    res.setHeader(
-        "Access-Control-Allow-Methods",
-        "GET, OPTIONS"
-    );
-
-    res.setHeader(
-        "Access-Control-Allow-Headers",
-        "*"
-    );
-
-    if (req.method === "OPTIONS") {
-        return res.status(204).end();
-    }
-
-    if (req.method !== "GET") {
-        return res.status(405).json({
-            ok: false,
-            error: "Method not allowed"
-        });
-    }
-
-    try {
-        const {
-            id,
-            type = "tv",
-            s,
-            e
-        } = req.query;
-
-        // ----------------------------------------------------
-        // VALIDATION
-        // ----------------------------------------------------
-
-        if (!id) {
-            return res.status(400).json({
-                ok: false,
-                error:
-                    "Missing required parameter: id"
-            });
+def extract_modiplay(media_id, media_type="tv", season=None, episode=None):
+    """Extract video from Modiplay"""
+    try:
+        # Build embed URL
+        if media_type == "tv":
+            embed_url = (
+                f"{MODIPLAY_API}/embed/tmdb/tv"
+                f"?id={media_id}&s={season}&e={episode}"
+            )
+        else:
+            embed_url = (
+                f"{MODIPLAY_API}/embed/tmdb/movie"
+                f"?id={media_id}"
+            )
+        
+        # Fetch embed page
+        embed_html, embed_final_url = modiplay_fetch_page(embed_url)
+        
+        # Extract player iframe
+        player_iframe_url = modiplay_extract_player_iframe(embed_html, embed_final_url)
+        
+        if not player_iframe_url:
+            raise Exception("Could not extract player iframe")
+        
+        # Fetch player iframe page
+        player_html, player_final_url = modiplay_fetch_page(player_iframe_url, referer=embed_final_url)
+        
+        # Extract direct src (m3u8 URL)
+        direct_src = modiplay_extract_direct_src(player_html)
+        
+        if not direct_src:
+            raise Exception("Could not extract directSrc")
+        
+        # Make absolute URL if needed
+        if direct_src.startswith('/'):
+            from urllib.parse import urlparse
+            parsed = urlparse(player_final_url)
+            direct_src = f"{parsed.scheme}://{parsed.netloc}{direct_src}"
+        
+        return {
+            "success": True,
+            "source": "modiplay",
+            "media_id": media_id,
+            "media_type": media_type,
+            "season": season,
+            "episode": episode,
+            "videoUrl": direct_src,
+            "embedUrl": embed_url,
+            "playerUrl": player_iframe_url,
+        }
+    
+    except Exception as e:
+        return {
+            "success": False,
+            "source": "modiplay",
+            "error": str(e),
         }
 
-        if (
-            type !== "tv" &&
-            type !== "movie"
-        ) {
-            return res.status(400).json({
-                ok: false,
-                error:
-                    "type must be tv or movie"
-            });
-        }
 
-        let season = null;
-        let episode = null;
+# ============================================================
+# UNIFIED API HANDLER
+# ============================================================
 
-        if (type === "tv") {
-            if (
-                s === undefined ||
-                e === undefined
-            ) {
-                return res.status(400).json({
-                    ok: false,
-                    error:
-                        "TV requires s and e"
-                });
-            }
-
-            season = Number(s);
-            episode = Number(e);
-
-            if (
-                !Number.isInteger(season) ||
-                !Number.isInteger(episode)
-            ) {
-                return res.status(400).json({
-                    ok: false,
-                    error:
-                        "s and e must be integers"
-                });
-            }
-        }
-
-        console.log(
-            "=================================================="
-        );
-
-        console.log(
-            "[REQUEST]",
-            {
-                id,
-                type,
-                season,
-                episode
-            }
-        );
-
-        console.log(
-            "=================================================="
-        );
-
-        // ----------------------------------------------------
-        // EXTRACT
-        // ----------------------------------------------------
-
-        const result =
-            await extractIqsmartgames({
-                id,
-                type,
-                season,
-                episode
-            });
-
-        // ----------------------------------------------------
-        // RESPONSE
-        // ----------------------------------------------------
-
-        return res.status(200).json({
-            ok: true,
-            ...result
-        });
-
-    } catch (error) {
-        console.error(
-            "[ERROR]",
-            error
-        );
-
-        return res.status(500).json({
-            ok: false,
-            error:
-                error?.message ||
-                "Extraction failed"
-        });
+def handle_request(params):
+    """Handle API request with both sources"""
+    
+    source = params.get("source", "both")
+    media_type = params.get("type", "tv")
+    
+    results = {
+        "timestamp": str(__import__('datetime').datetime.now().isoformat()),
+        "params": params,
+        "results": [],
     }
-}
+    
+    # Castle: requires title
+    if source in ("castle", "both"):
+        title = params.get("title")
+        if title:
+            season = params.get("season")
+            episode = params.get("episode")
+            if season:
+                season = int(season)
+            if episode:
+                episode = int(episode)
+            
+            result = extract_castle(title, season, episode)
+            results["results"].append(result)
+    
+    # Modiplay: requires media_id
+    if source in ("modiplay", "both"):
+        media_id = params.get("id") or params.get("media_id")
+        if media_id:
+            season = params.get("season")
+            episode = params.get("episode")
+            if season:
+                season = int(season)
+            if episode:
+                episode = int(episode)
+            
+            result = extract_modiplay(media_id, media_type, season, episode)
+            results["results"].append(result)
+    
+    return results
+
+
+# ============================================================
+# VERCEL HANDLER
+# ============================================================
+
+def handler(request):
+    """Vercel serverless function handler"""
+    
+    # CORS headers
+    headers = {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Content-Type": "application/json",
+    }
+    
+    # Handle OPTIONS
+    if request.method == "OPTIONS":
+        return ("", 204, headers)
+    
+    # Only allow GET and POST
+    if request.method not in ("GET", "POST"):
+        return (
+            json.dumps({"ok": False, "error": "Method not allowed"}),
+            405,
+            headers,
+        )
+    
+    try:
+        # Parse parameters
+        if request.method == "GET":
+            params = request.args.to_dict() if hasattr(request.args, 'to_dict') else dict(request.args)
+        else:
+            params = request.get_json() or {}
+        
+        # Handle request
+        result = handle_request(params)
+        
+        return (
+            json.dumps(result, indent=2),
+            200,
+            headers,
+        )
+    
+    except Exception as e:
+        return (
+            json.dumps({"ok": False, "error": str(e)}),
+            500,
+            headers,
+        )
+
+
+# ============================================================
+# STANDALONE USAGE (for testing)
+# ============================================================
+
+if __name__ == "__main__":
+    import sys
+    
+    print("Unified Video Extractor API")
+    print("=" * 60)
+    
+    # Example: Castle - Game of Thrones S1E1
+    print("\n[TEST 1] Castle - Game of Thrones S1E1")
+    result1 = extract_castle("Game of Thrones", season=1, episode=1)
+    print(json.dumps(result1, indent=2))
+    
+    # Example: Modiplay - TV Show
+    print("\n[TEST 2] Modiplay - Game of Thrones S1E1")
+    result2 = extract_modiplay("1399", media_type="tv", season=1, episode=1)
+    print(json.dumps(result2, indent=2))
+    
+    # Example: Modiplay - Movie
+    print("\n[TEST 3] Modiplay - Movie (ID: 672)")
+    result3 = extract_modiplay("672", media_type="movie")
+    print(json.dumps(result3, indent=2))
