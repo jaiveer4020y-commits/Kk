@@ -3,6 +3,7 @@
  * Endpoint: /api/source?id=1399&type=tv&s=1&e=1
  * Usage: Rename to source.js and place in api/ folder
  */
+console.log("Request received:", req.method)
 
 const https = require('https');
 const http = require('http');
