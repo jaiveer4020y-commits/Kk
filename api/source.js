@@ -39,7 +39,9 @@ let movieBoxTokenCache = { token: null, expiresAt: 0 };
  */
 function cleanVideoUrl(url) {
   if (!url) return "";
-  let cleaned = String(url).replace(/\\\/g, '/').replace(/\\/g, '');
+  let cleaned = String(url)
+    .replaceAll('\\/', '/')
+    .replaceAll('\\', '');
   try {
     cleaned = decodeURIComponent(cleaned);
   } catch (e) {
@@ -287,13 +289,9 @@ async function castleGetDetails(movieId, securityKey, logger) {
   return await castleRequest(url, securityKey, logger);
 }
 
-/**
- * Robust Castle getVideo2 handler: Tries GET v1.1.0 with languageId & headers, fallbacks to POST v2.0.1
- */
 async function castleGetVideo(targetMovieId, episodeId, securityKey, resolution, languageId, logger) {
   const langId = languageId || 1003;
 
-  // Method 1: Direct GET API with securityKey & languageId
   try {
     const queryParams = new URLSearchParams({
       channel: CASTLE_CONFIG.channel,
@@ -319,7 +317,6 @@ async function castleGetVideo(targetMovieId, episodeId, securityKey, resolution,
     logger.log("CASTLE_GETVIDEO_GET_ERR", `GET getVideo2 failed: ${e.message}`);
   }
 
-  // Method 2: POST v2.0.1 Fallback API
   const postUrl = `${CASTLE_API}/film-api/v2.0.1/movie/getVideo2?clientType=${CASTLE_CONFIG.clientType}&packageName=${CASTLE_CONFIG.packageName}&channel=${CASTLE_CONFIG.channel}&lang=${CASTLE_CONFIG.lang}`;
   
   const body = {
@@ -398,7 +395,6 @@ async function extractCastle(title, season = null, episode = null, isDebug = fal
 
     const episodeId = String(episodeData.id || episodeData.episodeId || episodeData.movieId);
 
-    // Extract default language track (English 1003 fallback)
     const defaultTrack = episodeData.tracks?.find(t => t.isDefault) || episodeData.tracks?.[0];
     const languageId = defaultTrack?.languageId || 1003;
 
@@ -559,7 +555,6 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
       videoUrl = `${urlObj.protocol}//${urlObj.host}${videoUrl}`;
     }
 
-    // Final URL sanitization
     videoUrl = cleanVideoUrl(videoUrl);
 
     return {
