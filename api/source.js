@@ -1,8 +1,6 @@
 /**
  * Triple Video Source API - Castle + Modiplay + MovieBox
- * Fixed: GZIP decompression in fetchUrl & Castle empty stream handling
- * Feature: Side-by-Side Dual Stream Extraction with Hindi Language Prioritization
- * Feature: Enhanced MovieBox Subject Metadata Inspection with Hindi Text Identifiers
+ * MovieBox Logic: Uses simultaneous download & play endpoints with strict language tagging [Hindi / Original]
  */
 
 const https = require('https');
@@ -31,56 +29,6 @@ const CASTLE_CONFIG = {
 const DEFAULT_UA = "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36";
 
 let movieBoxTokenCache = { token: null, expiresAt: 0 };
-
-// ============================================================
-// HINDI TEXT & LANGUAGE IDENTIFIER ENGINE
-// ============================================================
-
-const HINDI_PATTERNS = [
-  /\bhindi\b/i,
-  /\bhin\b/i,
-  /हिन्दी/i,
-  /हिंदी/i,
-  /hindi\s*dubbed/i,
-  /dual\s*audio/i,
-  /multi\s*audio/i
-];
-
-/**
- * Deep scans metadata objects, title strings, audio track arrays, 
- * and subtitles for Hindi language indicators.
- */
-function detectHindi(data) {
-  if (!data) return { isHindiTitle: false, hasHindiAudio: false, hasHindiSubtitle: false, isHindiMatch: false };
-
-  const rawString = typeof data === 'object' ? JSON.stringify(data).toLowerCase() : String(data).toLowerCase();
-  const isHindiTitle = HINDI_PATTERNS.some(pattern => pattern.test(rawString));
-  let hasHindiAudio = false;
-  let hasHindiSubtitle = false;
-
-  if (typeof data === 'object' && data !== null) {
-    // Check Audio Tracks / Languages array
-    const audioList = data.audioTracks || data.audio_tracks || data.languages || data.tracks || data.audio || [];
-    hasHindiAudio = audioList.some(track => {
-      const trackStr = typeof track === 'object' ? JSON.stringify(track) : String(track);
-      return HINDI_PATTERNS.some(p => p.test(trackStr));
-    });
-
-    // Check Subtitle / Caption array
-    const subList = data.subtitles || data.caption_list || data.captions || [];
-    hasHindiSubtitle = subList.some(sub => {
-      const subStr = typeof sub === 'object' ? JSON.stringify(sub) : String(sub);
-      return HINDI_PATTERNS.some(p => p.test(subStr));
-    });
-  }
-
-  return {
-    isHindiTitle,
-    hasHindiAudio,
-    hasHindiSubtitle,
-    isHindiMatch: isHindiTitle || hasHindiAudio || hasHindiSubtitle
-  };
-}
 
 // ============================================================
 // UTILITIES & LOGGER
@@ -217,59 +165,8 @@ function extractLanguageTag(title) {
   return match ? match[1].trim() : 'Original';
 }
 
-function dashManifestFromPolicy(signCookie) {
-  if (!signCookie || typeof signCookie !== 'string') return null;
-  let policyPart = null;
-  for (const item of signCookie.split(';')) {
-    const trimmed = item.trim();
-    if (trimmed.startsWith('CloudFront-Policy=')) {
-      policyPart = trimmed.split('=')[1].trim().replace(/^"|"$/g, '');
-      break;
-    }
-  }
-  if (!policyPart) return null;
-
-  try {
-    let stdB64 = policyPart.replace(/-/g, '+').replace(/~/g, '/').replace(/_/g, '=');
-    stdB64 = stdB64.replace(/\s+/g, '').replace(/=+$/, '');
-    stdB64 += '='.repeat((4 - (stdB64.length % 4)) % 4);
-
-    const decoded = Buffer.from(stdB64, 'base64').toString('utf-8');
-    const policyJson = JSON.parse(decoded);
-    const statements = policyJson.Statement || [];
-    if (!statements.length) return null;
-
-    let resource = (statements[0].Resource || '').trim();
-    let baseResource = resource.replace(/\*+$/, '').replace(/\/+$/, '');
-    if (!baseResource || !baseResource.startsWith('http')) return null;
-
-    if (baseResource.toLowerCase().endsWith('.mpd')) {
-      return baseResource;
-    }
-    return baseResource + '/index.mpd';
-  } catch (e) {
-    return null;
-  }
-}
-
-function cloudfrontCookie(signCookie) {
-  if (!signCookie || typeof signCookie !== 'string') return null;
-  const parts = [];
-  for (let p of signCookie.split(';')) {
-    p = p.trim().replace(/^"|"$/g, '');
-    if (p.includes('=')) {
-      const [key, ...vArr] = p.split('=');
-      const val = vArr.join('=').trim().replace(/^"|"$/g, '');
-      if (val) parts.push(`${key}=${val}`);
-    }
-  }
-  return parts.length ? parts.join('; ') : null;
-}
-
 /**
- * Filter streams to get top 2 side-by-side results:
- * - Prioritizes up to 2 streams with "Hindi" text/language metadata using regex engine.
- * - If fewer than 2 Hindi streams exist, fills remaining slots with top regular streams.
+ * Prioritizes 1 Hindi stream and 1 Original stream side-by-side
  */
 function selectTopTwoStreams(streams) {
   if (!streams || !streams.length) return [];
@@ -278,21 +175,28 @@ function selectTopTwoStreams(streams) {
   const otherStreams = [];
 
   for (const item of streams) {
-    const isHindi = detectHindi(item).isHindiMatch;
-    if (isHindi) {
+    const lang = String(item.language || '').toLowerCase();
+    const name = String(item.name || '').toLowerCase();
+
+    if (lang.includes('hindi') || name.includes('hindi')) {
       hindiStreams.push(item);
     } else {
       otherStreams.push(item);
     }
   }
 
-  const selected = hindiStreams.slice(0, 2);
-  if (selected.length < 2) {
-    const needed = 2 - selected.length;
-    selected.push(...otherStreams.slice(0, needed));
+  const selected = [];
+  if (hindiStreams.length > 0) selected.push(hindiStreams[0]);
+  if (otherStreams.length > 0) selected.push(otherStreams[0]);
+
+  if (selected.length < 2 && hindiStreams.length > 1) {
+    selected.push(hindiStreams[1]);
+  }
+  if (selected.length < 2 && otherStreams.length > 1 && !selected.includes(otherStreams[1])) {
+    selected.push(otherStreams[1]);
   }
 
-  return selected;
+  return selected.length ? selected : streams.slice(0, 2);
 }
 
 // ============================================================
@@ -506,14 +410,13 @@ async function extractCastle(title, season = null, episode = null, isDebug = fal
       throw new Error(`Castle: Season ${season} Episode ${episode} is unmapped or unavailable`);
     }
 
-    const hindiInfo = detectHindi(details);
     const streamObj = {
+      name: "Castle [Original]",
       url: videoUrl,
       urlWithHeaders: videoUrl,
       headers: {},
       resolution: "auto",
-      language: hindiInfo.isHindiMatch ? "Hindi" : "Original",
-      is_hindi: hindiInfo.isHindiMatch
+      language: "Original"
     };
 
     return {
@@ -525,7 +428,6 @@ async function extractCastle(title, season = null, episode = null, isDebug = fal
       videoUrl: videoUrl,
       subtitles: videoData.subtitles || [],
       quality: "auto",
-      hindiIdentifiers: hindiInfo,
       debugLogs: logger.getLogs(),
     };
   } catch (error) {
@@ -599,14 +501,13 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
 
     if (!videoUrl) throw new Error("Modiplay: Stream target missing");
 
-    const hindiInfo = detectHindi(html);
     const streamObj = {
+      name: "Modiplay [Original]",
       url: videoUrl,
       urlWithHeaders: videoUrl,
       headers: {},
       resolution: "auto",
-      language: hindiInfo.isHindiMatch ? "Hindi" : "Original",
-      is_hindi: hindiInfo.isHindiMatch
+      language: "Original"
     };
 
     return {
@@ -617,7 +518,6 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
       player2: null,
       videoUrl: videoUrl,
       quality: "auto",
-      hindiIdentifiers: hindiInfo,
       debugLogs: logger.getLogs(),
     };
   } catch (error) {
@@ -632,7 +532,7 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
 }
 
 // ============================================================
-// MOVIEBOX API (ENHANCED METADATA & HINDI IDENTIFIER FIX)
+// MOVIEBOX API (REFACTORED WITH EXACT KOTLIN LOGIC)
 // ============================================================
 
 async function fetchMovieBoxBearerToken(logger, forceRefresh = false) {
@@ -658,350 +558,200 @@ async function fetchMovieBoxBearerToken(logger, forceRefresh = false) {
   throw new Error("MovieBox: Bearer token parsing failed");
 }
 
-async function getMovieBoxDetailPath(subjectId, defaultPath = "", logger) {
-  if (defaultPath && defaultPath.trim()) return defaultPath;
-  const url = `${MOVIEBOX_H5_WEB}/wefeed-h5-bff/web/post/list/subject?id=${subjectId}`;
-  try {
-    const res = await fetchUrl(url, { timeout: 8000 });
-    const parsed = JSON.parse(res.data || "{}");
-    const items = parsed.data?.items || [];
-    if (items.length > 0) {
-      return items[0]?.subject?.detailPath || "";
-    }
-  } catch (e) {
-    logger.log("MOVIEBOX_DETAIL_PATH_ERR", e.message);
-  }
-  return "";
-}
-
-/**
- * Fetches comprehensive Subject Metadata by ID from MovieBox endpoints
- * and applies Hindi language text inspection.
- */
-async function getMovieBoxSubjectDetail(subjectId, token, logger) {
-  const primaryUrl = `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/${subjectId}/detail`;
-  let data = {};
-
-  try {
-    const res = await fetchUrl(primaryUrl, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json",
-        "User-Agent": DEFAULT_UA,
-        "Referer": MOVIEBOX_BASE_URL,
-      },
-      body: {},
-      timeout: 10000,
-    });
-    const parsed = JSON.parse(res.data || "{}");
-    data = parsed.data || {};
-  } catch (e) {
-    logger.log("MOVIEBOX_PRIMARY_DETAIL_ERR", e.message);
-    // Secondary fallback for legacy detail endpoint
-    try {
-      const fallbackUrl = `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/detail?subjectId=${subjectId}`;
-      const res = await fetchUrl(fallbackUrl, {
-        headers: {
-          "Authorization": `Bearer ${token}`,
-          "User-Agent": DEFAULT_UA,
-        },
-        timeout: 8000
-      });
-      const parsed = JSON.parse(res.data || "{}");
-      data = parsed.data || {};
-    } catch (fallbackErr) {
-      logger.log("MOVIEBOX_FALLBACK_DETAIL_ERR", fallbackErr.message);
-    }
-  }
-
-  return data;
-}
-
-async function fetchMovieBoxEpisodePlay(episodeId, languageId, token, logger, resolution = 1080) {
-  const url = `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/episode/${episodeId}/play`;
-  try {
-    const res = await fetchUrl(url, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json",
-        "User-Agent": DEFAULT_UA,
-        "Referer": MOVIEBOX_BASE_URL,
-      },
-      body: {
-        episodeId,
-        languageId: languageId || "",
-        resolution,
-        quality: "high",
-      },
-      timeout: 10000,
-    });
-    const parsed = JSON.parse(res.data || "{}");
-    return parsed.data?.sources || [];
-  } catch (e) {
-    logger.log("MOVIEBOX_EPISODE_PLAY_ERR", e.message);
-  }
-  return [];
-}
-
-/**
- * Core MovieBox Extraction & Metadata Handler:
- * Supports querying by Title String or Direct Subject ID.
- * Annotates metadata and audio streams with Hindi Text Identifiers.
- */
-async function extractMovieBox(titleOrId, mediaType = "movie", season = null, episode = null, isDebug = false) {
+async function extractMovieBox(title, mediaType = "movie", season = null, episode = null, isDebug = false) {
   const logger = createLogger(isDebug);
 
   try {
     const token = await fetchMovieBoxBearerToken(logger);
-    const isDirectId = /^\d+$/.test(String(titleOrId).trim());
-    
-    let matchedSubjects = [];
-    let fullMetadata = {};
+    const subjectType = (mediaType === "tv" || season !== null) ? 2 : 1;
 
-    if (isDirectId) {
-      // Direct ID Search Logic
-      const subjectId = String(titleOrId).trim();
-      logger.log("MOVIEBOX_ID_SEARCH", `Direct Subject ID mode triggered for ID: ${subjectId}`);
-      
-      fullMetadata = await getMovieBoxSubjectDetail(subjectId, token, logger);
-      const rawTitle = fullMetadata.title || fullMetadata.name || `Subject ${subjectId}`;
-      const detailPath = await getMovieBoxDetailPath(subjectId, fullMetadata.detailPath || "", logger);
+    logger.log("MOVIEBOX_SEARCH_REQ", "Searching MovieBox for keyword", { title, subjectType });
 
-      matchedSubjects.push({
-        subjectId,
-        language: extractLanguageTag(rawTitle),
-        rawTitle,
-        detailPath
-      });
-    } else {
-      // Title Search Logic
-      const title = titleOrId;
-      const subjectType = (mediaType === "tv" || season !== null) ? 2 : 1;
-
-      logger.log("MOVIEBOX_SEARCH_REQ", "Searching MovieBox for keyword", { title, subjectType });
-
-      const searchRes = await fetchUrl(`${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/search`, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${token}`,
-          "Content-Type": "application/json",
-          "X-Client-Info": JSON.stringify({ timezone: "Africa/Nairobi" }),
-          "Referer": MOVIEBOX_BASE_URL,
-        },
-        body: {
-          keyword: title,
-          page: 1,
-          perPage: 24,
-          subjectType
-        }
-      });
-
-      const searchObj = JSON.parse(searchRes.data);
-      const items = unwrapData(searchObj)?.items || [];
-      logger.log("MOVIEBOX_SEARCH_RES", `Found ${items.length} subjects`);
-
-      if (!items.length) throw new Error("MovieBox: Search returned 0 results");
-
-      const targetTitleClean = cleanTitleString(title);
-
-      for (const item of items) {
-        const rawTitle = item.title || "";
-        const subjectId = item.subjectId || item.id;
-        if (!subjectId) continue;
-
-        const itemCleanTitle = cleanTitleString(rawTitle);
-        if (itemCleanTitle === targetTitleClean || itemCleanTitle.includes(targetTitleClean) || targetTitleClean.includes(itemCleanTitle)) {
-          matchedSubjects.push({
-            subjectId: String(subjectId),
-            language: extractLanguageTag(rawTitle),
-            rawTitle,
-            detailPath: item.detailPath || "",
-            rawItem: item
-          });
-        }
+    const searchRes = await fetchUrl(`${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/search`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "X-Client-Info": JSON.stringify({ timezone: "Africa/Nairobi" }),
+        "Referer": MOVIEBOX_BASE_URL,
+      },
+      body: {
+        keyword: title,
+        page: 1,
+        perPage: 24,
+        subjectType
       }
+    });
 
-      if (!matchedSubjects.length && items.length > 0) {
-        const first = items[0];
-        matchedSubjects.push({
-          subjectId: String(first.subjectId || first.id),
-          language: extractLanguageTag(first.title || ""),
-          rawTitle: first.title || "",
-          detailPath: first.detailPath || "",
-          rawItem: first
-        });
+    const searchObj = JSON.parse(searchRes.data);
+    const items = unwrapData(searchObj)?.items || [];
+    logger.log("MOVIEBOX_SEARCH_RES", `Found ${items.length} items`);
+
+    if (!items.length) throw new Error("MovieBox: Search returned 0 results");
+
+    // Exact Kotlin Regex matching
+    const SEASON_SUFFIX_REGEX = /\s*S\d+(?:-S?\d+)*$/i;
+    const escapedTitle = (title || "").replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const titleMatchRegex = new RegExp(`^${escapedTitle}(?:\\s+\\[([^\\]]+)\\])?$`, "i");
+
+    const uniqueIdsWithLang = new Map();
+
+    for (const item of items) {
+      const id = String(item.subjectId || item.id || "");
+      if (!id) continue;
+
+      const rawTitle = item.title || "";
+      const cleanTitle = rawTitle.replace(SEASON_SUFFIX_REGEX, "").trim();
+      const matchResult = cleanTitle.match(titleMatchRegex);
+
+      if (matchResult) {
+        const language = matchResult[1] ? matchResult[1].trim() : "Original";
+        if (!uniqueIdsWithLang.has(id)) {
+          uniqueIdsWithLang.set(id, language);
+        }
       }
     }
 
-    logger.log("MOVIEBOX_MATCHED_SUBJECTS", `Matched ${matchedSubjects.length} subjects`, matchedSubjects);
+    // Fallback if title regex was overly strict
+    if (uniqueIdsWithLang.size === 0) {
+      const targetClean = cleanTitleString(title);
+      for (const item of items) {
+        const id = String(item.subjectId || item.id || "");
+        if (!id) continue;
+
+        const rawTitle = item.title || "";
+        const itemClean = cleanTitleString(rawTitle);
+
+        if (itemClean === targetClean || itemClean.includes(targetClean) || targetClean.includes(itemClean)) {
+          const lang = extractLanguageTag(rawTitle);
+          if (!uniqueIdsWithLang.has(id)) {
+            uniqueIdsWithLang.set(id, lang);
+          }
+        }
+      }
+    }
+
+    if (uniqueIdsWithLang.size === 0 && items.length > 0) {
+      const first = items[0];
+      const id = String(first.subjectId || first.id || "");
+      if (id) {
+        uniqueIdsWithLang.set(id, extractLanguageTag(first.title || ""));
+      }
+    }
+
+    if (uniqueIdsWithLang.size === 0) {
+      throw new Error("MovieBox: No matching subjects found");
+    }
+
+    logger.log("MOVIEBOX_MATCHED_SUBJECTS", `Matched ${uniqueIdsWithLang.size} subjects`, Array.from(uniqueIdsWithLang.entries()));
 
     const candidateStreams = [];
-    const subtitles = [];
 
-    for (const target of matchedSubjects) {
-      logger.log("MOVIEBOX_SUBJECT_FETCH", `Fetching stream for ${target.rawTitle} [ID: ${target.subjectId}]`);
+    for (const [subjectId, language] of uniqueIdsWithLang.entries()) {
+      logger.log("MOVIEBOX_SUBJECT_FETCH", `Processing subjectId: ${subjectId}, language: ${language}`);
 
-      const detailPath = await getMovieBoxDetailPath(target.subjectId, target.detailPath, logger);
-      const streamHeaders = {
-        "Referer": `https://123moviesfree.club/movies/${detailPath}?id=${target.subjectId}&type=/movie/detail`,
-        "Origin": "https://123moviesfree.club",
+      let detailPath = "";
+      try {
+        const detailRes = await fetchUrl(`${MOVIEBOX_H5_WEB}/wefeed-h5-bff/web/post/list/subject?id=${subjectId}`, { timeout: 8000 });
+        const detailObj = JSON.parse(detailRes.data || "{}");
+        detailPath = detailObj.data?.items?.[0]?.subject?.detailPath || "";
+      } catch (e) {
+        logger.log("MOVIEBOX_DETAIL_PATH_ERR", e.message);
+      }
+
+      const params = new URLSearchParams({ subjectId });
+      if (season !== null && episode !== null) {
+        params.append("se", String(season));
+        params.append("ep", String(episode));
+      }
+      if (detailPath) {
+        params.append("detailPath", detailPath);
+      }
+
+      const reqHeaders = {
         "User-Agent": DEFAULT_UA,
-        "Accept": "*/*",
+        "Authorization": `Bearer ${token}`,
+        "Referer": `https://fmoviesunblocked.net/spa/videoPlayPage/movies/${detailPath}?id=${subjectId}&type=/movie/detail`,
+        "Origin": "https://fmoviesunblocked.net",
+        "X-Client-Info": JSON.stringify({ timezone: "Africa/Nairobi" })
       };
 
-      let collectedSources = [];
+      const streamHeaders = {
+        "Referer": "https://fmoviesunblocked.net/",
+        "Origin": "https://fmoviesunblocked.net",
+        "User-Agent": DEFAULT_UA
+      };
 
-      // Fetch Metadata Tree for current subject if not loaded
-      if (!fullMetadata.title) {
-        fullMetadata = await getMovieBoxSubjectDetail(target.subjectId, token, logger);
-      }
+      const downloadUrl = `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/download?${params.toString()}`;
+      const playUrl = `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/play?${params.toString()}`;
 
-      // STEP A: Try H5 Tree & Episode Play Endpoint
-      if (fullMetadata && fullMetadata.seasons) {
-        const seasonsObj = fullMetadata.seasons || {};
-        const seasonKey = `Season ${season || 1}`;
-        const seasonData = seasonsObj[seasonKey] || {};
-        const episodeData = seasonData[`Episode ${episode || 1}`] || {};
-        const episodeId = episodeData.id;
+      // Simultaneous fetches
+      const [downloadRes, playRes] = await Promise.all([
+        fetchUrl(downloadUrl, { headers: reqHeaders }).catch(() => ({ data: "{}" })),
+        fetchUrl(playUrl, { headers: reqHeaders }).catch(() => ({ data: "{}" }))
+      ]);
 
-        if (episodeId) {
-          const tracks = episodeData.tracks || [];
-          let selectedLangId = tracks.length > 0 ? tracks[0].languageId : "";
+      const downloadData = unwrapData(JSON.parse(downloadRes.data || "{}"));
+      const playData = unwrapData(JSON.parse(playRes.data || "{}"));
 
-          // Prioritize Hindi track language if available, else English
-          for (const trk of tracks) {
-            const trkName = String(trk.languageName || "").toLowerCase();
-            if (trkName.includes("hindi") || trkName.includes("hin")) {
-              selectedLangId = trk.languageId;
-              break;
-            } else if (trkName.includes("english")) {
-              selectedLangId = trk.languageId;
-            }
-          }
+      const addedQualities = new Set();
 
-          const epSources = await fetchMovieBoxEpisodePlay(episodeId, selectedLangId, token, logger);
-          if (epSources.length > 0) {
-            collectedSources = epSources;
-            logger.log("MOVIEBOX_EPISODE_PLAY_SUCCESS", `Extracted ${epSources.length} streams from H5 Episode Play`);
-          }
-        }
-      }
+      // Parse Downloads
+      const downloads = downloadData.downloads || [];
+      for (const d of downloads) {
+        const dlink = cleanVideoUrl(d.url || d.videoUrl || d.playUrl || "");
+        const isVip = Boolean(d.vipLocked);
+        const resolution = parseInt(d.resolution, 10) || 0;
 
-      // STEP B: Direct Download/Play Endpoint Fallback
-      if (!collectedSources.length) {
-        const params = new URLSearchParams({ subjectId: target.subjectId });
-        if (season !== null) params.append("se", String(season));
-        if (episode !== null) params.append("ep", String(episode));
-        if (detailPath) params.append("detailPath", detailPath);
-
-        const apiHeaders = {
-          ...streamHeaders,
-          "Authorization": `Bearer ${token}`,
-          "X-Client-Info": JSON.stringify({ timezone: "Africa/Nairobi" }),
-        };
-
-        const endpoints = [
-          `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/play?${params.toString()}`,
-          `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/download?${params.toString()}`
-        ];
-
-        for (const epUrl of endpoints) {
-          try {
-            const res = await fetchUrl(epUrl, { headers: apiHeaders });
-            const resObj = JSON.parse(res.data || "{}");
-            const dataPayload = unwrapData(resObj);
-
-            const rawStreamList = [
-              ...(dataPayload.streams || []),
-              ...(dataPayload.downloads || []),
-              ...(dataPayload.playUrls || []),
-              ...(dataPayload.list || []),
-              ...(dataPayload.urls || [])
-            ];
-
-            if (dataPayload.url || dataPayload.videoUrl) {
-              rawStreamList.push(dataPayload);
-            }
-
-            collectedSources.push(...rawStreamList);
-
-            const captions = dataPayload.captions || dataPayload.subtitles || [];
-            for (const c of captions) {
-              if (c.url) {
-                subtitles.push({
-                  url: cleanVideoUrl(c.url),
-                  language: c.lanName || c.lan || c.language || "English"
-                });
-              }
-            }
-          } catch (e) {
-            logger.log("MOVIEBOX_EP_ERR", `Fetch failed for ${epUrl}: ${e.message}`);
-          }
-        }
-      }
-
-      // Process raw stream items
-      for (const s of collectedSources) {
-        if (s.vipLocked) continue;
-
-        let rawUrl = s.url || s.videoUrl || s.playUrl || s.src || s.link || "";
-        const signCookie = s.sign_cookie || s.signCookie;
-        const cookieVal = cloudfrontCookie(signCookie);
-
-        let finalUrl = cleanVideoUrl(rawUrl);
-
-        if ((!finalUrl || finalUrl.includes('.mpd')) && signCookie) {
-          const manifest = dashManifestFromPolicy(signCookie);
-          if (manifest) finalUrl = manifest;
-        }
-
-        if (finalUrl && !finalUrl.includes('macdn.aoneroom.com/other/')) {
-          const resVal = String(s.resolution || s.resolutions || s.quality || s.definition || "auto");
-          const itemHeaders = { ...streamHeaders };
-          if (cookieVal) itemHeaders["Cookie"] = cookieVal;
-
-          const streamLang = s.language || s.lang || target.language || "Original";
-          const hindiStreamCheck = detectHindi(streamLang).isHindiMatch || detectHindi(s).isHindiMatch || detectHindi(target.rawTitle).isHindiMatch;
-
+        if (dlink && !isVip) {
+          addedQualities.add(resolution);
           candidateStreams.push({
-            rawTitle: target.rawTitle,
-            url: finalUrl,
-            urlWithHeaders: buildPipeUrl(finalUrl, itemHeaders),
-            headers: itemHeaders,
-            resolution: resVal,
-            language: hindiStreamCheck ? "Hindi" : streamLang,
-            is_hindi: hindiStreamCheck
+            name: `MovieBox [${language}]`,
+            source: "MovieBox",
+            language: language,
+            url: dlink,
+            urlWithHeaders: buildPipeUrl(dlink, streamHeaders),
+            headers: streamHeaders,
+            resolution: resolution ? `${resolution}p` : "auto",
+            qualityInt: resolution
+          });
+        }
+      }
+
+      // Parse Streams
+      const streams = playData.streams || [];
+      for (const s of streams) {
+        const slink = cleanVideoUrl(s.url || s.videoUrl || s.playUrl || "");
+        const isVip = Boolean(s.vipLocked);
+        const resString = String(s.resolutions || "");
+        const resolution = parseInt(resString, 10) || parseInt(s.resolution, 10) || 0;
+
+        if (slink && !isVip && !addedQualities.has(resolution)) {
+          addedQualities.add(resolution);
+          candidateStreams.push({
+            name: `MovieBox [${language}]`,
+            source: "MovieBox",
+            language: language,
+            url: slink,
+            urlWithHeaders: buildPipeUrl(slink, streamHeaders),
+            headers: streamHeaders,
+            resolution: resolution ? `${resolution}p` : "auto",
+            qualityInt: resolution
           });
         }
       }
     }
 
-    if (!candidateStreams.length) throw new Error("MovieBox: Stream sources unavailable");
+    if (!candidateStreams.length) {
+      throw new Error("MovieBox: Streams missing across all matched IDs");
+    }
 
-    // Hindi Detection across full metadata payload
-    const hindiIdentifiers = detectHindi(fullMetadata);
-
-    // Filter down to the top 2 streams side-by-side with Hindi text prioritization
     const topTwoStreams = selectTopTwoStreams(candidateStreams);
     const primaryStream = topTwoStreams[0] || candidateStreams[0];
 
     return {
       success: true,
       source: "moviebox",
-      subjectId: matchedSubjects[0]?.subjectId || titleOrId,
-      metadata: {
-        title: fullMetadata.title || fullMetadata.name || matchedSubjects[0]?.rawTitle,
-        year: fullMetadata.year || fullMetadata.releaseDate,
-        description: fullMetadata.description || fullMetadata.summary,
-        cover: fullMetadata.cover || fullMetadata.poster,
-        rating: fullMetadata.score || fullMetadata.rating,
-        genres: fullMetadata.genres || [],
-        audioTracks: fullMetadata.audioTracks || fullMetadata.tracks || [],
-        subtitles: subtitles.length ? subtitles : (fullMetadata.subtitles || [])
-      },
-      hindiIdentifiers: hindiIdentifiers,
       topTwo: topTwoStreams,
       player1: topTwoStreams[0] || null,
       player2: topTwoStreams[1] || null,
@@ -1010,7 +760,6 @@ async function extractMovieBox(titleOrId, mediaType = "movie", season = null, ep
       headers: primaryStream.headers,
       quality: String(primaryStream.resolution),
       qualities: candidateStreams,
-      subtitles: subtitles,
       debugLogs: logger.getLogs(),
     };
   } catch (error) {
@@ -1025,7 +774,7 @@ async function extractMovieBox(titleOrId, mediaType = "movie", season = null, ep
 }
 
 // ============================================================
-// MAIN HTTP / VERCEL SERVERLESS HANDLER
+// MAIN VERCEL / NODE HANDLER
 // ============================================================
 
 module.exports = async (req, res) => {
@@ -1036,46 +785,24 @@ module.exports = async (req, res) => {
   if (req.method === "OPTIONS") return res.status(204).end();
 
   try {
-    const { id, title, type = "tv", s, e, source = "all", debug, action } = req.query;
+    const { id, title, type = "tv", s, e, source = "all", debug } = req.query;
     const isDebug = debug === "true" || debug === "1";
 
     if (!id && !title) {
       return res.status(400).json({
         success: false,
         error: "Missing required parameter: 'id' or 'title'",
-        usage: {
-          search_by_id: "/?id=123456&source=moviebox",
-          search_by_title: "/?title=Kantara&source=all&s=1&e=1",
-          metadata_check: "/?action=metadata&id=123456&source=moviebox"
-        }
       });
     }
 
     const season = s ? parseInt(s, 10) : 1;
     const episode = e ? parseInt(e, 10) : 1;
     const mediaType = type.toLowerCase() === "movie" ? "movie" : "tv";
-    const searchQuery = id || title;
 
-    // Action Mode 1: Pure Metadata Lookup for MovieBox / Castle / Modiplay
-    if (action === "metadata" || action === "detail") {
-      const token = await fetchMovieBoxBearerToken(createLogger(isDebug));
-      const metadata = await getMovieBoxSubjectDetail(searchQuery, token, createLogger(isDebug));
-      const hindiFlags = detectHindi(metadata);
-
-      return res.status(200).json({
-        success: true,
-        source: "moviebox",
-        subjectId: searchQuery,
-        metadata,
-        hindiIdentifiers: hindiFlags
-      });
-    }
-
-    // Action Mode 2: Multi-Source Stream Resolution
     const fetchTasks = [];
 
-    if ((source === "all" || source === "moviebox") && searchQuery) {
-      fetchTasks.push(extractMovieBox(searchQuery, mediaType, season, episode, isDebug));
+    if ((source === "all" || source === "moviebox") && title) {
+      fetchTasks.push(extractMovieBox(title, mediaType, season, episode, isDebug));
     }
 
     if ((source === "all" || source === "castle") && title) {
@@ -1097,9 +824,6 @@ module.exports = async (req, res) => {
       return res.status(200).json({
         success: true,
         source: successfulResult.source,
-        subjectId: successfulResult.subjectId || id || null,
-        metadata: successfulResult.metadata || null,
-        hindiIdentifiers: successfulResult.hindiIdentifiers || detectHindi(successfulResult),
         sideBySide: {
           player1: player1,
           player2: player2
@@ -1110,8 +834,6 @@ module.exports = async (req, res) => {
         headers: successfulResult.headers || null,
         quality: successfulResult.quality || "auto",
         qualities: successfulResult.qualities || [],
-        audioTracks: successfulResult.audioTracks || [],
-        subtitles: successfulResult.subtitles || [],
         allResults: results,
       });
     }
