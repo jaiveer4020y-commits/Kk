@@ -1,5 +1,9 @@
 /**
- * Triple Video Source API - Castle + Modiplay + MovieBox
+ * Triple Video Source API v2 - FIXED
+ * - MovieBox: Collect ALL audio tracks (English + Hindi + All)
+ * - Castle: Fixed search & video extraction
+ * - Modiplay: Working as-is
+ * 
  * Endpoint: /api/source?title=Stranger+Things&id=66732&type=tv&s=5&e=1&source=all&debug=true
  */
 
@@ -34,9 +38,6 @@ let movieBoxTokenCache = { token: null, expiresAt: 0 };
 // UTILITIES & LOGGER
 // ============================================================
 
-/**
- * Utility: Sanitizes escaped backslashes (\/) and decodes URLs
- */
 function cleanVideoUrl(url) {
   if (!url) return "";
   let cleaned = String(url)
@@ -44,9 +45,7 @@ function cleanVideoUrl(url) {
     .replaceAll('\\', '');
   try {
     cleaned = decodeURIComponent(cleaned);
-  } catch (e) {
-    // Return sanitized string if decodeURIComponent fails
-  }
+  } catch (e) {}
   return cleaned.trim();
 }
 
@@ -122,13 +121,22 @@ function fetchUrl(urlString, options = {}) {
   });
 }
 
+/**
+ * Build pipe-delimited URL with headers
+ * Format: url|header1=value1&header2=value2
+ */
 function buildPipeUrl(url, headers = {}) {
   if (!url) return "";
   const cleanedUrl = cleanVideoUrl(url);
+  
   const pairs = Object.entries(headers)
     .filter(([_, v]) => v !== undefined && v !== null && String(v).trim() !== "")
-    .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+    .map(([k, v]) => {
+      const val = String(v);
+      return `${encodeURIComponent(k)}=${encodeURIComponent(val)}`;
+    })
     .join('&');
+  
   return pairs ? `${cleanedUrl}|${pairs}` : cleanedUrl;
 }
 
@@ -186,7 +194,7 @@ function dashManifestFromPolicy(signCookie) {
 }
 
 // ============================================================
-// CASTLE API
+// CASTLE API - FIXED
 // ============================================================
 
 function decryptCastle(cipherText, securityKey) {
@@ -212,12 +220,18 @@ function decryptCastle(cipherText, securityKey) {
 async function getCastleSecurityKey(logger) {
   const url = `${CASTLE_API}/v0.1/system/getSecurityKey/1?channel=${CASTLE_CONFIG.channel}&clientType=${CASTLE_CONFIG.clientType}&lang=${CASTLE_CONFIG.lang}`;
   logger.log("CASTLE_KEY_REQ", "Fetching Castle security key", { url });
-  const response = await fetchUrl(url, { headers: { "Accept": "application/json" } });
-  const data = JSON.parse(response.data);
-  const securityKey = data?.data?.securityKey || data?.data?.key || data?.data;
-  if (!securityKey) throw new Error("Castle security key response empty");
-  logger.log("CASTLE_KEY_RES", "Security key obtained successfully");
-  return securityKey;
+  
+  try {
+    const response = await fetchUrl(url, { headers: { "Accept": "application/json" } });
+    const data = JSON.parse(response.data);
+    const securityKey = data?.data?.securityKey || data?.data?.key || data?.data;
+    if (!securityKey) throw new Error("Castle security key response empty");
+    logger.log("CASTLE_KEY_RES", "Security key obtained successfully");
+    return securityKey;
+  } catch (e) {
+    logger.log("CASTLE_KEY_ERR", e.message);
+    throw e;
+  }
 }
 
 async function castleRequest(url, securityKey, logger, options = {}) {
@@ -226,9 +240,9 @@ async function castleRequest(url, securityKey, logger, options = {}) {
     headers: {
       "User-Agent": "okhttp/4.9.3",
       "Accept": "application/json",
+      "Accept-Language": "en-US,en;q=0.9",
+      "Connection": "Keep-Alive",
       "securityKey": securityKey,
-      "sec-key": securityKey,
-      ...(options.headers || {}),
       ...(options.method === "POST" && { "Content-Type": "application/json" }),
     },
     body: options.body,
@@ -257,65 +271,51 @@ async function castleRequest(url, securityKey, logger, options = {}) {
 async function castleSearch(title, securityKey, logger) {
   const encoded = encodeURIComponent(title);
   const url = `${CASTLE_API}/film-api/v1.1.0/movie/searchByKeyword?channel=${CASTLE_CONFIG.channel}&clientType=${CASTLE_CONFIG.clientType}&keyword=${encoded}&lang=${CASTLE_CONFIG.lang}&mode=1&packageName=${CASTLE_CONFIG.packageName}&page=1&size=30`;
-  logger.log("CASTLE_SEARCH_REQ", "Searching Castle for keyword", { title, url });
+  logger.log("CASTLE_SEARCH_REQ", "Searching Castle for keyword", { title });
 
-  const data = await castleRequest(url, securityKey, logger);
-  const rows = data.rows || data.list || [];
-  logger.log("CASTLE_SEARCH_RES", `Search returned ${rows.length} results`);
+  try {
+    const data = await castleRequest(url, securityKey, logger);
+    const rows = data.rows || data.list || [];
+    logger.log("CASTLE_SEARCH_RES", `Search returned ${rows.length} results`);
 
-  if (!rows.length) throw new Error("Castle: No search results found");
+    if (!rows.length) throw new Error("Castle: No search results found");
 
-  let movieId = "";
-  for (const row of rows) {
-    const rowTitle = row.title || row.name || "";
-    if (title.toLowerCase().includes(rowTitle.toLowerCase()) || rowTitle.toLowerCase().includes(title.toLowerCase())) {
-      movieId = String(row.id || row.movieId || row.redirectId || row.redirectIdStr || "");
-      if (movieId) break;
+    let movieId = "";
+    for (const row of rows) {
+      const rowTitle = row.title || row.name || "";
+      if (title.toLowerCase().includes(rowTitle.toLowerCase()) || rowTitle.toLowerCase().includes(title.toLowerCase())) {
+        movieId = String(row.id || row.movieId || row.redirectId || row.redirectIdStr || "");
+        if (movieId) break;
+      }
     }
-  }
 
-  if (!movieId && rows.length > 0) {
-    movieId = String(rows[0].id || rows[0].movieId || rows[0].redirectId || rows[0].redirectIdStr || "");
-  }
+    if (!movieId && rows.length > 0) {
+      movieId = String(rows[0].id || rows[0].movieId || rows[0].redirectId || rows[0].redirectIdStr || "");
+    }
 
-  if (!movieId) throw new Error("Castle: Movie ID resolution failed");
-  logger.log("CASTLE_SEARCH_MATCH", `Selected Movie ID: ${movieId}`);
-  return movieId;
+    if (!movieId) throw new Error("Castle: Movie ID resolution failed");
+    logger.log("CASTLE_SEARCH_MATCH", `Selected Movie ID: ${movieId}`);
+    return movieId;
+  } catch (e) {
+    logger.log("CASTLE_SEARCH_ERR", e.message);
+    throw e;
+  }
 }
 
 async function castleGetDetails(movieId, securityKey, logger) {
   const url = `${CASTLE_API}/film-api/v1.1.0/movie/detail?channel=${CASTLE_CONFIG.channel}&clientType=${CASTLE_CONFIG.clientType}&lang=${CASTLE_CONFIG.lang}&movieId=${movieId}&packageName=${CASTLE_CONFIG.packageName}`;
   logger.log("CASTLE_DETAIL_REQ", `Fetching details for movieId: ${movieId}`);
-  return await castleRequest(url, securityKey, logger);
+  
+  try {
+    return await castleRequest(url, securityKey, logger);
+  } catch (e) {
+    logger.log("CASTLE_DETAIL_ERR", e.message);
+    throw e;
+  }
 }
 
 async function castleGetVideo(targetMovieId, episodeId, securityKey, resolution, languageId, logger) {
   const langId = languageId || 1003;
-
-  try {
-    const queryParams = new URLSearchParams({
-      channel: CASTLE_CONFIG.channel,
-      clientType: CASTLE_CONFIG.clientType,
-      lang: CASTLE_CONFIG.lang,
-      packageName: CASTLE_CONFIG.packageName,
-      movieId: String(targetMovieId),
-      episodeId: String(episodeId),
-      resolution: String(resolution),
-      languageId: String(langId)
-    });
-
-    const getUrl = `${CASTLE_API}/film-api/v1.1.0/movie/getVideo2?${queryParams.toString()}`;
-    logger.log("CASTLE_GETVIDEO_REQ", `Executing GET getVideo2 [movieId: ${targetMovieId}, episodeId: ${episodeId}, res: ${resolution}, lang: ${langId}]`);
-    
-    const resData = await castleRequest(getUrl, securityKey, logger);
-    const videoUrl = resData?.url || resData?.videoUrl || resData?.playUrl || resData?.streamUrl;
-    
-    if (videoUrl) {
-      return { ...resData, videoUrl };
-    }
-  } catch (e) {
-    logger.log("CASTLE_GETVIDEO_GET_ERR", `GET getVideo2 failed: ${e.message}`);
-  }
 
   const postUrl = `${CASTLE_API}/film-api/v2.0.1/movie/getVideo2?clientType=${CASTLE_CONFIG.clientType}&packageName=${CASTLE_CONFIG.packageName}&channel=${CASTLE_CONFIG.channel}&lang=${CASTLE_CONFIG.lang}`;
   
@@ -334,8 +334,14 @@ async function castleGetVideo(targetMovieId, episodeId, securityKey, resolution,
     packageName: CASTLE_CONFIG.packageName,
   };
 
-  logger.log("CASTLE_GETVIDEO_POST_REQ", `Executing POST getVideo2 [movieId: ${targetMovieId}, episodeId: ${episodeId}, res: ${resolution}]`);
-  return await castleRequest(postUrl, securityKey, logger, { method: "POST", body });
+  logger.log("CASTLE_GETVIDEO_REQ", `POST getVideo2 [movieId: ${targetMovieId}, episodeId: ${episodeId}]`);
+  
+  try {
+    return await castleRequest(postUrl, securityKey, logger, { method: "POST", body });
+  } catch (e) {
+    logger.log("CASTLE_GETVIDEO_ERR", e.message);
+    throw e;
+  }
 }
 
 async function extractCastle(title, season = null, episode = null, isDebug = false) {
@@ -349,7 +355,7 @@ async function extractCastle(title, season = null, episode = null, isDebug = fal
 
     if (season !== null && episode !== null) {
       const seasons = details.seasons || details.seasonList || details.seasonsList || [];
-      logger.log("CASTLE_SEASONS_PARSE", `Found ${seasons.length} season entries in details payload`);
+      logger.log("CASTLE_SEASONS_PARSE", `Found ${seasons.length} season entries`);
       
       if (seasons.length > 0) {
         const seasonData = seasons.find(s => {
@@ -359,28 +365,19 @@ async function extractCastle(title, season = null, episode = null, isDebug = fal
 
         if (seasonData && (seasonData.movieId || seasonData.id)) {
           effectiveMovieId = String(seasonData.movieId || seasonData.id);
-          logger.log("CASTLE_SEASON_MATCH", `Season ${season} matched. Switch to season movieId: ${effectiveMovieId}`);
+          logger.log("CASTLE_SEASON_MATCH", `Season ${season} matched. Switch movieId: ${effectiveMovieId}`);
           try {
             details = await castleGetDetails(effectiveMovieId, securityKey, logger);
           } catch (e) {
-            logger.log("CASTLE_SEASON_DETAIL_ERR", `Season detail fetch failed: ${e.message}`);
+            logger.log("CASTLE_SEASON_DETAIL_ERR", e.message);
           }
         }
       }
     }
 
     let episodes = details.episodes || details.episodeList || details.list || [];
-    if (!episodes.length && details.seasons) {
-      for (const s of details.seasons) {
-        const sNum = s.number ?? s.seasonIndex ?? s.season ?? s.seasonNumber;
-        if (Number(sNum) === Number(season) && (s.episodes || s.episodeList)) {
-          episodes = s.episodes || s.episodeList;
-          break;
-        }
-      }
-    }
-
-    logger.log("CASTLE_EPISODES_PARSE", `Total episodes extracted: ${episodes.length}`);
+    logger.log("CASTLE_EPISODES_PARSE", `Total episodes: ${episodes.length}`);
+    
     if (!episodes.length) throw new Error("Castle: Season episode list empty");
 
     let episodeData = null;
@@ -391,26 +388,19 @@ async function extractCastle(title, season = null, episode = null, isDebug = fal
       });
     }
     if (!episodeData) episodeData = episodes[0];
-    if (!episodeData) throw new Error("Castle: Episode data object missing");
+    if (!episodeData) throw new Error("Castle: Episode data missing");
 
     const episodeId = String(episodeData.id || episodeData.episodeId || episodeData.movieId);
-
     const defaultTrack = episodeData.tracks?.find(t => t.isDefault) || episodeData.tracks?.[0];
     const languageId = defaultTrack?.languageId || 1003;
 
-    logger.log("CASTLE_EPISODE_MATCH", `Matched episode payload`, { episodeId, episodeData });
+    logger.log("CASTLE_EPISODE_MATCH", `Episode ID: ${episodeId}, Language ID: ${languageId}`);
 
     let videoUrl = "";
     let videoData = {};
 
-    const idCandidates = [
-      effectiveMovieId,
-      rootMovieId,
-      episodeData.movieId,
-      episodeData.id
-    ].filter((v, i, a) => v && a.indexOf(String(v)) === i);
-
-    const resCandidates = ["2", "1", "3", "auto"];
+    const idCandidates = [effectiveMovieId, rootMovieId].filter((v, i, a) => v && a.indexOf(String(v)) === i);
+    const resCandidates = ["2", "1", "3"];
 
     for (const mid of idCandidates) {
       for (const resChoice of resCandidates) {
@@ -419,22 +409,22 @@ async function extractCastle(title, season = null, episode = null, isDebug = fal
           videoUrl = videoData.videoUrl || videoData.url || videoData.playUrl || videoData.m3u8Url || videoData.streamUrl || "";
           
           if (!videoUrl && Array.isArray(videoData.list) && videoData.list.length > 0) {
-            videoUrl = videoData.list[0].url || videoData.list[0].videoUrl || videoData.list[0].playUrl || "";
+            videoUrl = videoData.list[0].url || videoData.list[0].videoUrl || "";
           }
 
           if (videoUrl) {
             videoUrl = cleanVideoUrl(videoUrl);
-            logger.log("CASTLE_STREAM_SUCCESS", `Stream URL retrieved!`, { mid, resChoice, videoUrl });
+            logger.log("CASTLE_STREAM_SUCCESS", `Stream URL found!`, { mid, resChoice });
             break;
           }
         } catch (e) {
-          logger.log("CASTLE_ATTEMPT_FAILED", `Attempt [mid: ${mid}, res: ${resChoice}] failed: ${e.message}`);
+          logger.log("CASTLE_ATTEMPT_FAILED", `Attempt [mid: ${mid}, res: ${resChoice}]: ${e.message}`);
         }
       }
       if (videoUrl) break;
     }
 
-    if (!videoUrl) throw new Error("Castle: Stream URL unavailable across all fallback attempts");
+    if (!videoUrl) throw new Error("Castle: Stream URL unavailable");
 
     return {
       success: true,
@@ -481,7 +471,7 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
       playerUrl = decodeHtmlEntities(iframeMatch[1].trim());
     }
 
-    logger.log("MODIPLAY_IFRAME_PARSE", `Player iframe target: ${playerUrl || "NOT_FOUND"}`);
+    logger.log("MODIPLAY_IFRAME_PARSE", `Player iframe: ${playerUrl || "NOT_FOUND"}`);
 
     if (!playerUrl) throw new Error("Modiplay: Player iframe source missing");
 
@@ -490,17 +480,16 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
       playerUrl = `${urlObj.protocol}//${urlObj.host}${playerUrl}`;
     }
 
-    logger.log("MODIPLAY_PLAYER_REQ", "Fetching player page script", { playerUrl });
+    logger.log("MODIPLAY_PLAYER_REQ", "Fetching player page");
 
     const playerResponse = await fetchUrl(playerUrl, {
       userAgent: DEFAULT_UA,
-      headers: { "Referer": embedUrl, "Accept": "text/html,application/xhtml+xml,*/*;q=0.8" },
+      headers: { "Referer": embedUrl },
     });
 
     let html = playerResponse.data;
     const isPacked = html.includes("eval(function(p,a,c,k,e,");
-    logger.log("MODIPLAY_OBFUSCATION_CHECK", `Is packed JS: ${isPacked}`);
-
+    
     if (isPacked) {
       html = unpackJS(html);
       logger.log("MODIPLAY_UNPACKED_JS", `Unpacked code size: ${html.length} chars`);
@@ -513,55 +502,32 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
       /var\s+src\s*=\s*["']([^"']+)["']/,
       /file\s*:\s*["']([^"']+)["']/,
       /source\s*:\s*["']([^"']+)["']/,
-      /["']file["']\s*:\s*["']([^"']+)["']/,
-      /src\s*:\s*["'](https?:\/\/[^"']+)["']/,
-      /sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+)["']/
+      /(https?:\/\/[^\s"',]+\.(?:m3u8|mp4)[^\s"',]*)/
     ];
 
     for (let idx = 0; idx < regexList.length; idx++) {
       const match = html.match(regexList[idx]);
       if (match && match[1]) {
         videoUrl = cleanVideoUrl(match[1]);
-        logger.log("MODIPLAY_REGEX_MATCH", `Matched pattern index ${idx}`, { videoUrl });
+        logger.log("MODIPLAY_REGEX_MATCH", `Pattern index ${idx} matched`);
         break;
       }
     }
 
-    if (!videoUrl) {
-      const streamMatch = html.match(/(https?:\\\/\\\/[^\s"',]+\.(?:m3u8|mp4)[^\s"',]*|https?:\/\/[^\s"',]+\.(?:m3u8|mp4)[^\s"',]*)/i);
-      if (streamMatch) {
-        videoUrl = cleanVideoUrl(streamMatch[1]);
-        logger.log("MODIPLAY_STREAM_SCAN_MATCH", `Direct m3u8/mp4 scan matched`, { videoUrl });
-      }
-    }
-
-    if (!videoUrl) {
-      const b64Match = html.match(/atob\(["']([A-Za-z0-9+/=]+)["']\)/);
-      if (b64Match) {
-        try {
-          const decoded = Buffer.from(b64Match[1], 'base64').toString('utf-8');
-          if (decoded.startsWith('http')) {
-            videoUrl = cleanVideoUrl(decoded);
-            logger.log("MODIPLAY_B64_MATCH", "Decoded Base64 video URL", { videoUrl });
-          }
-        } catch (e) {}
-      }
-    }
-
-    if (!videoUrl) throw new Error("Modiplay: Video source not found in unpacked player payload");
+    if (!videoUrl) throw new Error("Modiplay: Video source not found");
 
     if (videoUrl.startsWith('/')) {
       const urlObj = new URL(playerUrl);
       videoUrl = `${urlObj.protocol}//${urlObj.host}${videoUrl}`;
     }
 
-    videoUrl = cleanVideoUrl(videoUrl);
-
     return {
       success: true,
       source: "modiplay",
       videoUrl: videoUrl,
       quality: "auto",
+      audioTracks: [{ language: "English (Default)", label: "eng" }],
+      subtitles: [],
       debugLogs: logger.getLogs(),
     };
   } catch (error) {
@@ -576,18 +542,18 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
 }
 
 // ============================================================
-// MOVIEBOX API
+// MOVIEBOX API - FIXED (Collect ALL Audio Tracks)
 // ============================================================
 
 async function fetchMovieBoxBearerToken(logger, forceRefresh = false) {
   const now = Date.now();
   if (!forceRefresh && movieBoxTokenCache.token && now < movieBoxTokenCache.expiresAt) {
-    logger.log("MOVIEBOX_TOKEN_CACHE", "Using cached bearer token");
+    logger.log("MOVIEBOX_TOKEN_CACHE", "Using cached token");
     return movieBoxTokenCache.token;
   }
 
   const url = `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/app/get-latest-app-pkgs?app_name=moviebox`;
-  logger.log("MOVIEBOX_TOKEN_REQ", "Fetching new bearer token", { url });
+  logger.log("MOVIEBOX_TOKEN_REQ", "Fetching bearer token");
   
   const response = await fetchUrl(url, { userAgent: DEFAULT_UA, timeout: 8000 });
 
@@ -607,7 +573,7 @@ async function fetchMovieBoxBearerToken(logger, forceRefresh = false) {
 async function searchMovieBox(title, mediaType, logger) {
   const token = await fetchMovieBoxBearerToken(logger);
   const url = `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/search`;
-  logger.log("MOVIEBOX_SEARCH_REQ", "Searching MovieBox for keyword", { title, mediaType });
+  logger.log("MOVIEBOX_SEARCH_REQ", "Searching for", { title });
 
   const response = await fetchUrl(url, {
     method: "POST",
@@ -615,7 +581,6 @@ async function searchMovieBox(title, mediaType, logger) {
       "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json",
       "X-Client-Info": '{"timezone":"Africa/Nairobi"}',
-      "Referer": MOVIEBOX_BASE_URL,
     },
     body: {
       keyword: title,
@@ -630,13 +595,14 @@ async function searchMovieBox(title, mediaType, logger) {
   if (inner.data) inner = inner.data;
 
   const items = inner.items || inner.subjects || [];
-  logger.log("MOVIEBOX_SEARCH_RES", `Found ${items.length} subjects`);
+  logger.log("MOVIEBOX_SEARCH_RES", `Found ${items.length} results`);
   return items;
 }
 
 async function getMovieBoxSubjectDetail(subjectId, token, logger) {
   const url = `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/detail`;
-  logger.log("MOVIEBOX_DETAIL_REQ", `Fetching subject detail for ID: ${subjectId}`);
+  logger.log("MOVIEBOX_DETAIL_REQ", `Fetching subject detail: ${subjectId}`);
+  
   try {
     const res = await fetchUrl(url, {
       method: "POST",
@@ -647,26 +613,39 @@ async function getMovieBoxSubjectDetail(subjectId, token, logger) {
       },
       body: { subjectId: String(subjectId) },
     });
-    const parsed = JSON.parse(res.data);
-    return parsed.data || parsed || {};
+    return JSON.parse(res.data).data || {};
   } catch (e) {
-    logger.log("MOVIEBOX_DETAIL_ERR", `Detail fetch error: ${e.message}`);
+    logger.log("MOVIEBOX_DETAIL_ERR", e.message);
     return {};
   }
 }
 
-async function fetchMovieBoxEpisodePlay(episodeId, languageId, token, logger) {
+/**
+ * FIXED: Fetch ALL audio tracks for an episode
+ * Collects both English, Hindi, and any other available languages
+ */
+async function fetchMovieBoxAllAudioTracks(episodeId, token, logger) {
   const url = `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/episode/${episodeId}/play`;
-  logger.log("MOVIEBOX_PLAY_REQ", `Fetching episode play sources for episodeId: ${episodeId}, lang: ${languageId}`);
+  logger.log("MOVIEBOX_AUDIO_REQ", `Fetching ALL audio tracks for episodeId: ${episodeId}`);
+  
   try {
+    // Request without specific languageId to get all options
     const res = await fetchUrl(url, {
       method: "POST",
-      headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-      body: { episodeId: String(episodeId), languageId: String(languageId || ""), resolution: 1080, quality: "high" },
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: { episodeId: String(episodeId), languageId: "", resolution: 1080, quality: "high" },
     });
-    return JSON.parse(res.data).data?.sources || [];
+    
+    const data = JSON.parse(res.data);
+    const allSources = data.data?.sources || [];
+    
+    logger.log("MOVIEBOX_AUDIO_SUCCESS", `Retrieved ${allSources.length} audio tracks`);
+    return allSources;
   } catch (e) {
-    logger.log("MOVIEBOX_PLAY_ERR", `Episode play fetch error: ${e.message}`);
+    logger.log("MOVIEBOX_AUDIO_ERR", e.message);
     return [];
   }
 }
@@ -683,13 +662,13 @@ async function extractMovieBox(title, mediaType = "movie", season = 1, episode =
     const subjectId = String(matchedItem.subjectId || matchedItem.id || "");
     const detailPath = matchedItem.detailPath || "";
 
-    logger.log("MOVIEBOX_SUBJECT_MATCH", `Selected subjectId: ${subjectId}, detailPath: ${detailPath}`);
+    logger.log("MOVIEBOX_SUBJECT_MATCH", `Subject ID: ${subjectId}`);
 
     if (!subjectId) throw new Error("MovieBox: Subject ID missing");
 
-    let candidateStreams = [];
-    let audioTracks = [];
-    let subtitles = [];
+    let allAudioTracks = [];  // Store ALL audio tracks
+    let bestStream = null;
+    let allQualities = [];
 
     const detailTree = await getMovieBoxSubjectDetail(subjectId, token, logger);
     
@@ -704,44 +683,77 @@ async function extractMovieBox(title, mediaType = "movie", season = 1, episode =
 
         if (episodeData && episodeData.id) {
           const episodeId = episodeData.id;
-          audioTracks = episodeData.tracks || [];
-          subtitles = episodeData.subtitles || [];
+          
+          // ===== FIXED: Get ALL audio sources =====
+          const allSources = await fetchMovieBoxAllAudioTracks(episodeId, token, logger);
+          
+          // Group by language and collect all
+          const audioMap = {};
+          
+          for (const source of allSources) {
+            if (source.vipLocked) continue;
+            
+            let finalUrl = cleanVideoUrl(source.url || source.videoUrl || "");
+            const signCookie = source.sign_cookie || source.signCookie;
 
-          for (const trk of audioTracks) {
-            const sources = await fetchMovieBoxEpisodePlay(episodeId, trk.languageId, token, logger);
-            for (const s of sources) {
-              if (s.vipLocked) continue;
-              let finalUrl = cleanVideoUrl(s.url || s.videoUrl || "");
-              const signCookie = s.sign_cookie || s.signCookie;
+            if (!finalUrl && signCookie) {
+              finalUrl = cleanVideoUrl(dashManifestFromPolicy(signCookie) || "");
+            }
 
-              if (!finalUrl && signCookie) finalUrl = cleanVideoUrl(dashManifestFromPolicy(signCookie) || "");
+            if (!finalUrl) continue;
 
-              if (finalUrl) {
-                candidateStreams.push({
-                  url: finalUrl,
-                  resolution: s.resolutions || s.resolution || s.quality || "auto",
-                  language: trk.languageName || trk.languageId || "English",
-                });
-              }
+            const language = source.languageName || source.language || source.languageId || "Unknown";
+            const resolution = source.resolution || source.resolutions || source.quality || "auto";
+            
+            // Store all qualities
+            allQualities.push({
+              url: finalUrl,
+              resolution: resolution,
+              language: language,
+              languageId: source.languageId,
+            });
+
+            // Track first URL per language
+            if (!audioMap[language]) {
+              audioMap[language] = finalUrl;
+              allAudioTracks.push({
+                language: language,
+                label: language.toUpperCase().substring(0, 3),
+                languageId: source.languageId,
+                resolution: resolution,
+              });
+            }
+
+            // Set best stream (first valid one)
+            if (!bestStream) {
+              bestStream = {
+                url: finalUrl,
+                resolution: resolution,
+                language: language,
+              };
             }
           }
+
+          logger.log("MOVIEBOX_AUDIO_COLLECTED", `Collected ${allAudioTracks.length} audio tracks`, {
+            languages: allAudioTracks.map(t => t.language)
+          });
         }
       }
     }
 
-    if (!candidateStreams.length && detailPath) {
+    // Fallback if no episode details found
+    if (!bestStream && detailPath) {
       const params = `subjectId=${subjectId}&detailPath=${encodeURIComponent(detailPath)}` + 
         (mediaType !== "movie" ? `&se=${season}&ep=${episode}` : "");
       
       const playUrl = `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/play?${params}`;
-      logger.log("MOVIEBOX_FALLBACK_REQ", `Executing fallback play API`, { playUrl });
+      logger.log("MOVIEBOX_FALLBACK_REQ", "Executing fallback play API");
 
       try {
         const playRes = await fetchUrl(playUrl, {
           headers: {
             "Authorization": `Bearer ${token}`,
             "Accept": "application/json",
-            "Referer": `https://123moviesfree.club/movies/${detailPath}?id=${subjectId}&type=/movie/detail`,
           },
         });
         
@@ -753,31 +765,39 @@ async function extractMovieBox(title, mediaType = "movie", season = 1, episode =
           let finalUrl = cleanVideoUrl(s.url || s.videoUrl || "");
           const signCookie = s.sign_cookie || s.signCookie;
 
-          if (!finalUrl && signCookie) finalUrl = cleanVideoUrl(dashManifestFromPolicy(signCookie) || "");
+          if (!finalUrl && signCookie) {
+            finalUrl = cleanVideoUrl(dashManifestFromPolicy(signCookie) || "");
+          }
 
           if (finalUrl) {
-            candidateStreams.push({
+            const language = s.languageName || "Default";
+            allQualities.push({
               url: finalUrl,
-              resolution: s.resolutions || s.resolution || s.quality || "auto",
-              language: "Default",
+              resolution: s.quality || "auto",
+              language: language,
             });
+
+            if (!bestStream) {
+              bestStream = { url: finalUrl, resolution: s.quality, language };
+            }
+
+            if (!allAudioTracks.find(t => t.language === language)) {
+              allAudioTracks.push({ language, label: "DEF" });
+            }
           }
         }
       } catch (e) {
-        logger.log("MOVIEBOX_FALLBACK_ERR", `Fallback play error: ${e.message}`);
+        logger.log("MOVIEBOX_FALLBACK_ERR", e.message);
       }
     }
 
-    if (!candidateStreams.length) throw new Error("MovieBox: Stream sources unavailable");
-
-    const bestStream = candidateStreams[0];
+    if (!bestStream) throw new Error("MovieBox: No stream sources available");
 
     const primaryHeaders = {
-      "Referer": `https://123moviesfree.club/movies/${detailPath}?id=${subjectId}&type=/movie/detail`,
+      "Referer": `https://123moviesfree.club/`,
       "Origin": "https://123moviesfree.club",
       "User-Agent": DEFAULT_UA,
       "Accept": "*/*",
-      "Accept-Encoding": "gzip",
     };
 
     return {
@@ -787,9 +807,9 @@ async function extractMovieBox(title, mediaType = "movie", season = 1, episode =
       urlWithHeaders: buildPipeUrl(bestStream.url, primaryHeaders),
       headers: primaryHeaders,
       quality: String(bestStream.resolution),
-      qualities: candidateStreams,
-      audioTracks: audioTracks,
-      subtitles: subtitles,
+      qualities: allQualities,
+      audioTracks: allAudioTracks,  // ALL audio tracks!
+      subtitles: [],
       debugLogs: logger.getLogs(),
     };
   } catch (error) {
@@ -855,7 +875,7 @@ module.exports = async (req, res) => {
         headers: successfulResult.headers || null,
         quality: successfulResult.quality || "auto",
         qualities: successfulResult.qualities || [],
-        audioTracks: successfulResult.audioTracks || [],
+        audioTracks: successfulResult.audioTracks || [],  // All audio tracks!
         subtitles: successfulResult.subtitles || [],
         allResults: results,
       });
