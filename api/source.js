@@ -50,6 +50,17 @@ function createLogger(isDebug) {
   };
 }
 
+function decodeHtmlEntities(str) {
+  if (!str) return "";
+  return str
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&#39;/g, "'");
+}
+
 function fetchUrl(urlString, options = {}) {
   return new Promise((resolve, reject) => {
     try {
@@ -94,17 +105,15 @@ function fetchUrl(urlString, options = {}) {
   });
 }
 
-// Clean and safe pipe URL builder (Encodes both keys and values properly)
 function buildPipeUrl(url, headers = {}) {
   if (!url) return "";
   const pairs = Object.entries(headers)
     .filter(([_, v]) => v !== undefined && v !== null && String(v).trim() !== "")
-    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+    .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
     .join('&');
   return pairs ? `${url}|${pairs}` : url;
 }
 
-// Dean Edwards JavaScript unpacker
 function unpackJS(packedCode) {
   try {
     const match = packedCode.match(/}\s*\('(.*)',\s*(\d+),\s*(\d+),\s*'(.*)'\s*\.split\('\Vert{}'\)/);
@@ -159,7 +168,7 @@ function dashManifestFromPolicy(signCookie) {
 }
 
 // ============================================================
-// CASTLE API - DECRYPTION & DEBUGGED EXTRACTOR
+// CASTLE API
 // ============================================================
 
 function decryptCastle(cipherText, securityKey) {
@@ -257,13 +266,13 @@ async function castleGetVideo(targetMovieId, episodeId, securityKey, resolution,
     mode: "1",
     appMarket: "GuanWang",
     clientType: CASTLE_CONFIG.clientType,
-    woolUser: "false",
+    woolUser: false,
     apkSignKey: CASTLE_CONFIG.key,
     androidVersion: "13",
     movieId: String(targetMovieId),
     episodeId: String(episodeId),
-    isNewUser: "true",
-    resolution: resolution,
+    isNewUser: true,
+    resolution: Number(resolution) || 2,
     packageName: CASTLE_CONFIG.packageName,
   };
 
@@ -332,17 +341,14 @@ async function extractCastle(title, season = null, episode = null, isDebug = fal
     let videoUrl = "";
     let videoData = {};
 
-    // Combine all potential IDs and try all resolution profiles
     const idCandidates = [
-      episodeData.movieId,
-      episodeData.id,
       effectiveMovieId,
-      rootMovieId
+      rootMovieId,
+      episodeData.movieId,
+      episodeData.id
     ].filter((v, i, a) => v && a.indexOf(String(v)) === i);
 
     const resCandidates = ["2", "1", "3", "auto"];
-
-    logger.log("CASTLE_ATTEMPT_MATRIX", `Testing candidate IDs: [${idCandidates.join(", ")}] across resolutions: [${resCandidates.join(", ")}]`);
 
     for (const mid of idCandidates) {
       for (const resChoice of resCandidates) {
@@ -371,7 +377,9 @@ async function extractCastle(title, season = null, episode = null, isDebug = fal
       success: true,
       source: "castle",
       videoUrl: videoUrl,
-      subtitles: videoData.subtitles || videoData.subtitleList || [],
+      qualities: episodeData.videos || [],
+      audioTracks: episodeData.tracks || [],
+      subtitles: episodeData.subtitles || videoData.subtitles || [],
       quality: "auto",
       debugLogs: logger.getLogs(),
     };
@@ -387,7 +395,7 @@ async function extractCastle(title, season = null, episode = null, isDebug = fal
 }
 
 // ============================================================
-// MODIPLAY - DEBUGGED EXTRACTOR WITH UNPACKER
+// MODIPLAY API
 // ============================================================
 
 async function extractModiplay(mediaId, mediaType = "tv", season = null, episode = null, isDebug = false) {
@@ -406,7 +414,9 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
 
     let playerUrl = "";
     const iframeMatch = embedResponse.data.match(/<iframe\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/i);
-    if (iframeMatch) playerUrl = iframeMatch[1].trim();
+    if (iframeMatch) {
+      playerUrl = decodeHtmlEntities(iframeMatch[1].trim());
+    }
 
     logger.log("MODIPLAY_IFRAME_PARSE", `Player iframe target: ${playerUrl || "NOT_FOUND"}`);
 
@@ -435,7 +445,6 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
 
     let videoUrl = "";
 
-    // Comprehensive Extractor Pattern Array
     const regexList = [
       /var\s+directSrc\s*=\s*["']([^"']+)["']/,
       /var\s+src\s*=\s*["']([^"']+)["']/,
@@ -455,7 +464,6 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
       }
     }
 
-    // Direct Stream File Regex Scan
     if (!videoUrl) {
       const streamMatch = html.match(/(https?:\/\/[^"'\s]+\.(?:m3u8|mp4)[^"'\s]*)/i);
       if (streamMatch) {
@@ -464,7 +472,6 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
       }
     }
 
-    // Base64 Decryption Fallback
     if (!videoUrl) {
       const b64Match = html.match(/atob\(["']([A-Za-z0-9+/=]+)["']\)/);
       if (b64Match) {
@@ -506,7 +513,7 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
 }
 
 // ============================================================
-// MOVIEBOX - DEBUGGED EXTRACTOR
+// MOVIEBOX API
 // ============================================================
 
 async function fetchMovieBoxBearerToken(logger, forceRefresh = false) {
@@ -565,15 +572,20 @@ async function searchMovieBox(title, mediaType, logger) {
 }
 
 async function getMovieBoxSubjectDetail(subjectId, token, logger) {
-  const url = `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/${subjectId}/detail`;
+  const url = `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/detail`;
   logger.log("MOVIEBOX_DETAIL_REQ", `Fetching subject detail for ID: ${subjectId}`);
   try {
     const res = await fetchUrl(url, {
       method: "POST",
-      headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-      body: {},
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "X-Client-Info": '{"timezone":"Africa/Nairobi"}'
+      },
+      body: { subjectId: String(subjectId) },
     });
-    return JSON.parse(res.data).data || {};
+    const parsed = JSON.parse(res.data);
+    return parsed.data || parsed || {};
   } catch (e) {
     logger.log("MOVIEBOX_DETAIL_ERR", `Detail fetch error: ${e.message}`);
     return {};
@@ -582,12 +594,12 @@ async function getMovieBoxSubjectDetail(subjectId, token, logger) {
 
 async function fetchMovieBoxEpisodePlay(episodeId, languageId, token, logger) {
   const url = `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/episode/${episodeId}/play`;
-  logger.log("MOVIEBOX_PLAY_REQ", `Fetching episode play sources for episodeId: ${episodeId}`);
+  logger.log("MOVIEBOX_PLAY_REQ", `Fetching episode play sources for episodeId: ${episodeId}, lang: ${languageId}`);
   try {
     const res = await fetchUrl(url, {
       method: "POST",
       headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-      body: { episodeId: episodeId, languageId: languageId || "", resolution: 1080, quality: "high" },
+      body: { episodeId: String(episodeId), languageId: String(languageId || ""), resolution: 1080, quality: "high" },
     });
     return JSON.parse(res.data).data?.sources || [];
   } catch (e) {
@@ -596,7 +608,7 @@ async function fetchMovieBoxEpisodePlay(episodeId, languageId, token, logger) {
   }
 }
 
-async function extractMovieBox(title, mediaType = "movie", season = 1, episode = 1, preferredLanguage = "english", isDebug = false) {
+async function extractMovieBox(title, mediaType = "movie", season = 1, episode = 1, isDebug = false) {
   const logger = createLogger(isDebug);
   try {
     const token = await fetchMovieBoxBearerToken(logger);
@@ -613,54 +625,47 @@ async function extractMovieBox(title, mediaType = "movie", season = 1, episode =
     if (!subjectId) throw new Error("MovieBox: Subject ID missing");
 
     let candidateStreams = [];
+    let audioTracks = [];
+    let subtitles = [];
 
-    // STEP A: Detail tree parsing
     const detailTree = await getMovieBoxSubjectDetail(subjectId, token, logger);
+    
     if (detailTree && detailTree.seasons) {
       const seasonsObj = detailTree.seasons;
       let matchedSeasonKey = Object.keys(seasonsObj).find(k => Number(k.replace(/\D/g, '')) === Number(season));
-      logger.log("MOVIEBOX_SEASON_KEY", `Matched season key: ${matchedSeasonKey || "NONE"}`);
-
+      
       if (matchedSeasonKey) {
         const seasonData = seasonsObj[matchedSeasonKey] || {};
         let matchedEpKey = Object.keys(seasonData).find(k => Number(k.replace(/\D/g, '')) === Number(episode));
-        logger.log("MOVIEBOX_EPISODE_KEY", `Matched episode key: ${matchedEpKey || "NONE"}`);
-
         const episodeData = matchedEpKey ? seasonData[matchedEpKey] : null;
-        const episodeId = episodeData?.id;
 
-        if (episodeId) {
-          const tracks = episodeData.tracks || [];
-          let selectedLangId = "";
+        if (episodeData && episodeData.id) {
+          const episodeId = episodeData.id;
+          audioTracks = episodeData.tracks || [];
+          subtitles = episodeData.subtitles || [];
 
-          for (const trk of tracks) {
-            if ((trk.languageName || "").toLowerCase().includes(preferredLanguage.toLowerCase())) {
-              selectedLangId = trk.languageId;
-              break;
-            }
-          }
-          if (!selectedLangId && tracks.length > 0) selectedLangId = tracks[0].languageId;
+          for (const trk of audioTracks) {
+            const sources = await fetchMovieBoxEpisodePlay(episodeId, trk.languageId, token, logger);
+            for (const s of sources) {
+              if (s.vipLocked) continue;
+              let finalUrl = s.url || s.videoUrl || "";
+              const signCookie = s.sign_cookie || s.signCookie;
 
-          const sources = await fetchMovieBoxEpisodePlay(episodeId, selectedLangId, token, logger);
-          for (const s of sources) {
-            if (s.vipLocked) continue;
-            let finalUrl = s.url || s.videoUrl || "";
-            const signCookie = s.sign_cookie || s.signCookie;
+              if (!finalUrl && signCookie) finalUrl = dashManifestFromPolicy(signCookie) || "";
 
-            if (!finalUrl && signCookie) finalUrl = dashManifestFromPolicy(signCookie) || "";
-
-            if (finalUrl) {
-              candidateStreams.push({
-                url: finalUrl,
-                resolution: s.resolutions || s.resolution || s.quality || "1080p",
-              });
+              if (finalUrl) {
+                candidateStreams.push({
+                  url: finalUrl,
+                  resolution: s.resolutions || s.resolution || s.quality || "auto",
+                  language: trk.languageName || trk.languageId || "English",
+                });
+              }
             }
           }
         }
       }
     }
 
-    // STEP B: Fallback Direct Play API
     if (!candidateStreams.length && detailPath) {
       const params = `subjectId=${subjectId}&detailPath=${encodeURIComponent(detailPath)}` + 
         (mediaType !== "movie" ? `&se=${season}&ep=${episode}` : "");
@@ -691,6 +696,7 @@ async function extractMovieBox(title, mediaType = "movie", season = 1, episode =
             candidateStreams.push({
               url: finalUrl,
               resolution: s.resolutions || s.resolution || s.quality || "auto",
+              language: "Default",
             });
           }
         }
@@ -718,6 +724,9 @@ async function extractMovieBox(title, mediaType = "movie", season = 1, episode =
       urlWithHeaders: buildPipeUrl(bestStream.url, primaryHeaders),
       headers: primaryHeaders,
       quality: String(bestStream.resolution),
+      qualities: candidateStreams,
+      audioTracks: audioTracks,
+      subtitles: subtitles,
       debugLogs: logger.getLogs(),
     };
   } catch (error) {
@@ -760,7 +769,7 @@ module.exports = async (req, res) => {
     const fetchTasks = [];
 
     if ((source === "all" || source === "moviebox") && title) {
-      fetchTasks.push(extractMovieBox(title, mediaType, season, episode, "english", isDebug));
+      fetchTasks.push(extractMovieBox(title, mediaType, season, episode, isDebug));
     }
 
     if ((source === "all" || source === "castle") && title) {
@@ -782,6 +791,8 @@ module.exports = async (req, res) => {
         urlWithHeaders: successfulResult.urlWithHeaders || null,
         headers: successfulResult.headers || null,
         quality: successfulResult.quality || "auto",
+        qualities: successfulResult.qualities || [],
+        audioTracks: successfulResult.audioTracks || [],
         subtitles: successfulResult.subtitles || [],
         allResults: results,
       });
