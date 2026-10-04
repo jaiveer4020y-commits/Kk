@@ -3,8 +3,6 @@
  * Endpoint: /api/source?title=Stranger+Things&id=66732&type=tv&s=1&e=1&source=all&debug=true
  */
 
-console.log("API route /api/source module loaded");
-
 const https = require('https');
 const http = require('http');
 const { URL } = require('url');
@@ -26,7 +24,7 @@ const CASTLE_CONFIG = {
   key: process.env.CASTLE_KEY || "814238e2175a1334641887e21235338a",
 };
 
-const DEFAULT_UA = "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36";
+const DEFAULT_UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
 
 let movieBoxTokenCache = { token: null, expiresAt: 0 };
 
@@ -41,9 +39,7 @@ function cleanVideoUrl(url) {
     .replaceAll('\\', '');
   try {
     cleaned = decodeURIComponent(cleaned);
-  } catch (e) {
-    // Return sanitized string if decodeURIComponent fails
-  }
+  } catch (e) {}
   return cleaned.trim();
 }
 
@@ -129,29 +125,6 @@ function buildPipeUrl(url, headers = {}) {
   return pairs ? `${cleanedUrl}|${pairs}` : cleanedUrl;
 }
 
-function unpackJS(packedCode) {
-  try {
-    const match = packedCode.match(/}\s*\('(.*)',\s*(\d+),\s*(\d+),\s*'(.*)'\s*\.split\('\Vert{}'\)/);
-    if (!match) return packedCode;
-
-    let [_, p, a, c, k] = match;
-    a = parseInt(a, 10);
-    c = parseInt(c, 10);
-    k = k.split('|');
-
-    const base36 = (num) => num.toString(36);
-
-    while (c--) {
-      if (k[c]) {
-        p = p.replace(new RegExp('\\b' + base36(c) + '\\b', 'g'), k[c]);
-      }
-    }
-    return p;
-  } catch (e) {
-    return packedCode;
-  }
-}
-
 function unwrapData(json) {
   if (!json || typeof json !== 'object') return {};
   const data = json.data || json;
@@ -173,41 +146,11 @@ function extractLanguageTag(title) {
   return match ? match[1].trim() : 'Original';
 }
 
-function dashManifestFromPolicy(signCookie) {
-  if (!signCookie || typeof signCookie !== 'string') return null;
-  let policyPart = null;
-  for (let item of signCookie.split(';')) {
-    item = item.trim();
-    if (item.startsWith("CloudFront-Policy=")) {
-      policyPart = item.split("=")[1].trim().replace(/^"|"$/g, '');
-      break;
-    }
-  }
-  if (!policyPart) return null;
-
-  try {
-    let stdB64 = policyPart.replace(/-/g, "+").replace(/~/g, "/").replace(/_/g, "=");
-    stdB64 = stdB64.replace(/\s+/g, "").replace(/=+$/, "");
-    stdB64 += "=".repeat((4 - (stdB64.length % 4)) % 4);
-
-    const policyJson = JSON.parse(Buffer.from(stdB64, 'base64').toString('utf-8'));
-    const statements = policyJson.Statement || [];
-    if (!statements.length) return null;
-
-    let resource = (statements[0].Resource || "").trim().replace(/\*$/, '').replace(/\/$/, '');
-    if (!resource.startsWith("http")) return null;
-
-    return resource.toLowerCase().endsWith(".mpd") ? resource : `${resource}/index.mpd`;
-  } catch (e) {
-    return null;
-  }
-}
-
 // ============================================================
-// CASTLE API
+// CASTLE API (Fixed to v1.9.9 Endpoint)
 // ============================================================
 
-function decryptCastle(cipherText, securityKey) {
+function decrypt_castle(cipherText, securityKey) {
   const pepper = Buffer.from("T!BgJB");
   const keyWords = Buffer.from(securityKey, 'base64');
   const combined = Buffer.concat([keyWords, pepper]);
@@ -230,10 +173,20 @@ function decryptCastle(cipherText, securityKey) {
 async function getCastleSecurityKey(logger) {
   const url = `${CASTLE_API}/v0.1/system/getSecurityKey/1?channel=${CASTLE_CONFIG.channel}&clientType=${CASTLE_CONFIG.clientType}&lang=${CASTLE_CONFIG.lang}`;
   logger.log("CASTLE_KEY_REQ", "Fetching Castle security key", { url });
-  const response = await fetchUrl(url, { headers: { "Accept": "application/json" } });
+  
+  const response = await fetchUrl(url, {
+    headers: {
+      "Accept": "application/json",
+      "Accept-Language": "en-US,en;q=0.9",
+    },
+  });
+  
   const data = JSON.parse(response.data);
-  const securityKey = data?.data?.securityKey || data?.data?.key || data?.data;
-  if (!securityKey) throw new Error("Castle security key response empty");
+  const securityKey = data.data;
+  
+  if (!securityKey) {
+    throw new Error("Castle security key not found");
+  }
   logger.log("CASTLE_KEY_RES", "Security key obtained successfully");
   return securityKey;
 }
@@ -244,9 +197,7 @@ async function castleRequest(url, securityKey, logger, options = {}) {
     headers: {
       "User-Agent": "okhttp/4.9.3",
       "Accept": "application/json",
-      "securityKey": securityKey,
-      "sec-key": securityKey,
-      ...(options.headers || {}),
+      "Accept-Language": "en-US,en;q=0.9",
       ...(options.method === "POST" && { "Content-Type": "application/json" }),
     },
     body: options.body,
@@ -255,21 +206,19 @@ async function castleRequest(url, securityKey, logger, options = {}) {
   let cipherText = response.data;
   try {
     const temp = JSON.parse(response.data);
-    if (temp.data && typeof temp.data === 'string') cipherText = temp.data;
-    else if (temp.data && typeof temp.data === 'object') return temp.data;
+    if (temp.data && typeof temp.data === 'string') {
+      cipherText = temp.data;
+    }
   } catch (e) {}
 
-  try {
-    const decrypted = decryptCastle(cipherText, securityKey);
-    let result = JSON.parse(decrypted);
-    return (result.data && typeof result.data === 'object') ? result.data : result;
-  } catch (e) {
-    try {
-      return JSON.parse(cipherText);
-    } catch (err) {
-      throw new Error(`Castle parse error: ${e.message}`);
-    }
+  const decrypted = decrypt_castle(cipherText, securityKey);
+  let result = JSON.parse(decrypted);
+
+  if (result.data && typeof result.data === 'object') {
+    return result.data;
   }
+
+  return result;
 }
 
 async function castleSearch(title, securityKey, logger) {
@@ -278,200 +227,120 @@ async function castleSearch(title, securityKey, logger) {
   logger.log("CASTLE_SEARCH_REQ", "Searching Castle for keyword", { title, url });
 
   const data = await castleRequest(url, securityKey, logger);
-  const rows = data.rows || data.list || [];
+  const rows = data.rows || [];
   logger.log("CASTLE_SEARCH_RES", `Search returned ${rows.length} results`);
 
-  if (!rows.length) throw new Error("Castle: No search results found");
+  if (!rows.length) {
+    throw new Error("Castle: No search results");
+  }
 
   let movieId = "";
-  let matchedItem = null;
-
   for (const row of rows) {
     const rowTitle = row.title || row.name || "";
     if (title.toLowerCase().includes(rowTitle.toLowerCase()) || rowTitle.toLowerCase().includes(title.toLowerCase())) {
-      movieId = String(row.id || row.movieId || row.redirectId || row.redirectIdStr || "");
-      matchedItem = row;
+      movieId = String(row.id || row.redirectId || row.redirectIdStr || "");
       if (movieId) break;
     }
   }
 
   if (!movieId && rows.length > 0) {
-    movieId = String(rows[0].id || rows[0].movieId || rows[0].redirectId || rows[0].redirectIdStr || "");
-    matchedItem = rows[0];
+    const first = rows[0];
+    movieId = String(first.id || first.redirectId || first.redirectIdStr || "");
   }
 
-  if (!movieId) throw new Error("Castle: Movie ID resolution failed");
+  if (!movieId) {
+    throw new Error("Castle: Movie ID not found");
+  }
+
   logger.log("CASTLE_SEARCH_MATCH", `Selected Movie ID: ${movieId}`);
-  return { movieId, matchedItem };
+  return movieId;
 }
 
-async function castleGetDetails(movieId, securityKey, logger, isTvShow = false, season = 1) {
-  let url = `${CASTLE_API}/film-api/v1.1.0/movie/detail?channel=${CASTLE_CONFIG.channel}&clientType=${CASTLE_CONFIG.clientType}&lang=${CASTLE_CONFIG.lang}&movieId=${movieId}&packageName=${CASTLE_CONFIG.packageName}`;
-  if (isTvShow) {
-    url = `${CASTLE_API}/film-api/v1.1.0/tv/getEpisodeList?channel=${CASTLE_CONFIG.channel}&clientType=${CASTLE_CONFIG.clientType}&lang=${CASTLE_CONFIG.lang}&tvId=${movieId}&seasonIndex=${season}&packageName=${CASTLE_CONFIG.packageName}`;
-  }
-  logger.log("CASTLE_DETAIL_REQ", `Fetching details [isTvShow: ${isTvShow}]`, { url });
+async function castleGetDetails(movieId, securityKey, logger) {
+  const url = `${CASTLE_API}/film-api/v1.9.9/movie?channel=${CASTLE_CONFIG.channel}&clientType=${CASTLE_CONFIG.clientType}&lang=${CASTLE_CONFIG.lang}&movieId=${movieId}&packageName=${CASTLE_CONFIG.packageName}`;
+  logger.log("CASTLE_DETAIL_REQ", `Fetching details v1.9.9`, { url });
   return await castleRequest(url, securityKey, logger);
 }
 
-async function castleGetVideo(targetMovieId, episodeId, securityKey, resolution, languageId, logger) {
-  const langId = languageId || 1003;
-
-  try {
-    const queryParams = new URLSearchParams({
-      channel: CASTLE_CONFIG.channel,
-      clientType: CASTLE_CONFIG.clientType,
-      lang: CASTLE_CONFIG.lang,
-      packageName: CASTLE_CONFIG.packageName,
-      movieId: String(targetMovieId),
-      episodeId: String(episodeId),
-      resolution: String(resolution),
-      languageId: String(langId)
-    });
-
-    const getUrl = `${CASTLE_API}/film-api/v1.1.0/movie/getVideo2?${queryParams.toString()}`;
-    logger.log("CASTLE_GETVIDEO_REQ", `Executing GET getVideo2 [movieId: ${targetMovieId}, episodeId: ${episodeId}, res: ${resolution}]`);
-    
-    const resData = await castleRequest(getUrl, securityKey, logger);
-    const videoUrl = resData?.url || resData?.videoUrl || resData?.playUrl || resData?.streamUrl;
-    
-    if (videoUrl) {
-      return { ...resData, videoUrl };
-    }
-  } catch (e) {
-    logger.log("CASTLE_GETVIDEO_GET_ERR", `GET getVideo2 failed: ${e.message}`);
-  }
-
-  const postUrl = `${CASTLE_API}/film-api/v2.0.1/movie/getVideo2?clientType=${CASTLE_CONFIG.clientType}&packageName=${CASTLE_CONFIG.packageName}&channel=${CASTLE_CONFIG.channel}&lang=${CASTLE_CONFIG.lang}`;
+async function castleGetVideo(movieId, episodeId, securityKey, logger) {
+  const url = `${CASTLE_API}/film-api/v2.0.1/movie/getVideo2?clientType=${CASTLE_CONFIG.clientType}&packageName=${CASTLE_CONFIG.packageName}&channel=${CASTLE_CONFIG.channel}&lang=${CASTLE_CONFIG.lang}`;
   
   const body = {
     mode: "1",
     appMarket: "GuanWang",
     clientType: CASTLE_CONFIG.clientType,
-    woolUser: false,
+    woolUser: "false",
     apkSignKey: CASTLE_CONFIG.key,
     androidVersion: "13",
-    movieId: String(targetMovieId),
+    movieId: String(movieId),
     episodeId: String(episodeId),
-    languageId: Number(langId),
-    isNewUser: true,
-    resolution: Number(resolution) || 2,
+    isNewUser: "true",
+    resolution: "2",
     packageName: CASTLE_CONFIG.packageName,
   };
 
-  logger.log("CASTLE_GETVIDEO_POST_REQ", `Executing POST getVideo2 [movieId: ${targetMovieId}, episodeId: ${episodeId}]`);
-  return await castleRequest(postUrl, securityKey, logger, { method: "POST", body });
+  logger.log("CASTLE_GETVIDEO_REQ", `Requesting video payload [movieId: ${movieId}, episodeId: ${episodeId}]`);
+  return await castleRequest(url, securityKey, logger, { method: "POST", body });
 }
 
 async function extractCastle(title, season = null, episode = null, isDebug = false) {
   const logger = createLogger(isDebug);
   try {
     const securityKey = await getCastleSecurityKey(logger);
-    const { movieId: rootMovieId, matchedItem } = await castleSearch(title, securityKey, logger);
+    const movieId = await castleSearch(title, securityKey, logger);
+    let details = await castleGetDetails(movieId, securityKey, logger);
     
-    const isTvShow = season !== null || matchedItem?.type === 2 || matchedItem?.type === "tv";
-    let details = {};
-    
-    try {
-      details = await castleGetDetails(rootMovieId, securityKey, logger, isTvShow, season || 1);
-    } catch (e) {
-      logger.log("CASTLE_DETAIL_WARN", `Primary detail fetch failed, falling back to movie detail: ${e.message}`);
-      details = await castleGetDetails(rootMovieId, securityKey, logger, false, season || 1);
-    }
+    let effectiveMovieId = movieId;
 
-    let effectiveMovieId = rootMovieId;
-
-    if (isTvShow && season !== null) {
-      const seasons = details.seasons || details.seasonList || details.seasonsList || [];
-      logger.log("CASTLE_SEASONS_PARSE", `Found ${seasons.length} season entries in details payload`);
-      
+    // Handle TV series
+    if (season !== null && episode !== null) {
+      const seasons = details.seasons || details.seasonList || [];
       if (seasons.length > 0) {
-        const seasonData = seasons.find(s => {
-          const sNum = s.number ?? s.seasonIndex ?? s.season ?? s.seasonNumber ?? s.sort;
-          return Number(sNum) === Number(season);
-        });
-
-        if (seasonData && (seasonData.movieId || seasonData.id || seasonData.tvId)) {
-          effectiveMovieId = String(seasonData.movieId || seasonData.id || seasonData.tvId);
-          logger.log("CASTLE_SEASON_MATCH", `Season ${season} matched. Switch to season movieId: ${effectiveMovieId}`);
+        const seasonData = seasons.find(s => (s.number ?? s.seasonIndex ?? s.season) === Number(season));
+        if (seasonData && seasonData.movieId && String(seasonData.movieId) !== String(movieId)) {
+          logger.log("CASTLE_SEASON_SWITCH", `Switching to season ${season} movieId: ${seasonData.movieId}`);
+          details = await castleGetDetails(seasonData.movieId, securityKey, logger);
+          effectiveMovieId = seasonData.movieId;
         }
       }
     }
 
-    let episodes = details.episodes || details.episodeList || details.list || [];
-    if (!episodes.length && details.seasons) {
-      for (const s of details.seasons) {
-        const sNum = s.number ?? s.seasonIndex ?? s.season ?? s.seasonNumber;
-        if (Number(sNum) === Number(season) && (s.episodes || s.episodeList)) {
-          episodes = s.episodes || s.episodeList;
-          break;
-        }
-      }
+    // Get episode
+    const episodes = details.episodes || details.episodeList || [];
+    if (!episodes.length && season === null) {
+      // Movie fallback
+      episodes.push({ id: effectiveMovieId, number: 1 });
+    }
+
+    if (!episodes.length) {
+      throw new Error("Castle: No episodes found");
     }
 
     let episodeData = null;
-    if (episodes.length > 0) {
-      if (season !== null && episode !== null) {
-        episodeData = episodes.find(ep => {
-          const epNum = ep.number ?? ep.episodeIndex ?? ep.episode ?? ep.sort;
-          return Number(epNum) === Number(episode);
-        });
-      }
-      if (!episodeData) episodeData = episodes[0];
-    } else {
-      // Fallback for movies / missing episode structures
-      episodeData = { id: effectiveMovieId, movieId: effectiveMovieId };
+    if (season !== null && episode !== null) {
+      episodeData = episodes.find(ep => (ep.number ?? ep.episodeIndex ?? ep.episode) === Number(episode));
+    }
+    
+    if (!episodeData) {
+      episodeData = episodes[0];
     }
 
-    const episodeId = String(episodeData.id || episodeData.episodeId || episodeData.movieId || effectiveMovieId);
-    const defaultTrack = episodeData.tracks?.find(t => t.isDefault) || episodeData.tracks?.[0];
-    const languageId = defaultTrack?.languageId || 1003;
+    const episodeId = episodeData.id || episodeData.episodeId || effectiveMovieId;
+    logger.log("CASTLE_EPISODE_MATCHED", `Episode resolved ID: ${episodeId}`);
 
-    logger.log("CASTLE_EPISODE_MATCH", `Matched episode payload`, { episodeId, episodeData });
+    // Get video
+    const videoData = await castleGetVideo(effectiveMovieId, episodeId, securityKey, logger);
+    const videoUrl = cleanVideoUrl(videoData.videoUrl || videoData.url || videoData.playUrl || "");
 
-    let videoUrl = "";
-    let videoData = {};
-
-    const idCandidates = [
-      effectiveMovieId,
-      rootMovieId,
-      episodeData.movieId,
-      episodeData.id
-    ].filter((v, i, a) => v && a.indexOf(String(v)) === i);
-
-    const resCandidates = ["2", "1", "3", "auto"];
-
-    for (const mid of idCandidates) {
-      for (const resChoice of resCandidates) {
-        try {
-          videoData = await castleGetVideo(mid, episodeId, securityKey, resChoice, languageId, logger);
-          videoUrl = videoData.videoUrl || videoData.url || videoData.playUrl || videoData.m3u8Url || videoData.streamUrl || "";
-          
-          if (!videoUrl && Array.isArray(videoData.list) && videoData.list.length > 0) {
-            videoUrl = videoData.list[0].url || videoData.list[0].videoUrl || videoData.list[0].playUrl || "";
-          }
-
-          if (videoUrl) {
-            videoUrl = cleanVideoUrl(videoUrl);
-            logger.log("CASTLE_STREAM_SUCCESS", `Stream URL retrieved!`, { mid, resChoice, videoUrl });
-            break;
-          }
-        } catch (e) {
-          logger.log("CASTLE_ATTEMPT_FAILED", `Attempt [mid: ${mid}, res: ${resChoice}] failed: ${e.message}`);
-        }
-      }
-      if (videoUrl) break;
+    if (!videoUrl) {
+      throw new Error("Castle: Video stream URL empty");
     }
-
-    if (!videoUrl) throw new Error("Castle: Stream URL unavailable across all fallback attempts");
 
     return {
       success: true,
       source: "castle",
       videoUrl: videoUrl,
-      qualities: episodeData.videos || [],
-      audioTracks: episodeData.tracks || [],
-      subtitles: episodeData.subtitles || videoData.subtitles || [],
+      subtitles: videoData.subtitles || [],
       quality: "auto",
       debugLogs: logger.getLogs(),
     };
@@ -510,8 +379,6 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
       playerUrl = decodeHtmlEntities(iframeMatch[1].trim());
     }
 
-    logger.log("MODIPLAY_IFRAME_PARSE", `Player iframe target: ${playerUrl || "NOT_FOUND"}`);
-
     if (!playerUrl) throw new Error("Modiplay: Player iframe source missing");
 
     if (playerUrl.startsWith('/')) {
@@ -519,7 +386,7 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
       playerUrl = `${urlObj.protocol}//${urlObj.host}${playerUrl}`;
     }
 
-    logger.log("MODIPLAY_PLAYER_REQ", "Fetching player page script", { playerUrl });
+    logger.log("MODIPLAY_PLAYER_REQ", "Fetching player script", { playerUrl });
 
     const playerResponse = await fetchUrl(playerUrl, {
       userAgent: DEFAULT_UA,
@@ -527,14 +394,6 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
     });
 
     let html = playerResponse.data;
-    const isPacked = html.includes("eval(function(p,a,c,k,e,");
-    logger.log("MODIPLAY_OBFUSCATION_CHECK", `Is packed JS: ${isPacked}`);
-
-    if (isPacked) {
-      html = unpackJS(html);
-      logger.log("MODIPLAY_UNPACKED_JS", `Unpacked code size: ${html.length} chars`);
-    }
-
     let videoUrl = "";
 
     const regexList = [
@@ -543,48 +402,18 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
       /file\s*:\s*["']([^"']+)["']/,
       /source\s*:\s*["']([^"']+)["']/,
       /["']file["']\s*:\s*["']([^"']+)["']/,
-      /src\s*:\s*["'](https?:\/\/[^"']+)["']/,
-      /sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+)["']/
+      /src\s*:\s*["'](https?:\/\/[^"']+)["']/
     ];
 
     for (let idx = 0; idx < regexList.length; idx++) {
       const match = html.match(regexList[idx]);
       if (match && match[1]) {
         videoUrl = cleanVideoUrl(match[1]);
-        logger.log("MODIPLAY_REGEX_MATCH", `Matched pattern index ${idx}`, { videoUrl });
         break;
       }
     }
 
-    if (!videoUrl) {
-      const streamMatch = html.match(/(https?:\\\/\\\/[^\s"',]+\.(?:m3u8|mp4)[^\s"',]*|https?:\/\/[^\s"',]+\.(?:m3u8|mp4)[^\s"',]*)/i);
-      if (streamMatch) {
-        videoUrl = cleanVideoUrl(streamMatch[1]);
-        logger.log("MODIPLAY_STREAM_SCAN_MATCH", `Direct m3u8/mp4 scan matched`, { videoUrl });
-      }
-    }
-
-    if (!videoUrl) {
-      const b64Match = html.match(/atob\(["']([A-Za-z0-9+/=]+)["']\)/);
-      if (b64Match) {
-        try {
-          const decoded = Buffer.from(b64Match[1], 'base64').toString('utf-8');
-          if (decoded.startsWith('http')) {
-            videoUrl = cleanVideoUrl(decoded);
-            logger.log("MODIPLAY_B64_MATCH", "Decoded Base64 video URL", { videoUrl });
-          }
-        } catch (e) {}
-      }
-    }
-
-    if (!videoUrl) throw new Error("Modiplay: Video source not found in unpacked player payload");
-
-    if (videoUrl.startsWith('/')) {
-      const urlObj = new URL(playerUrl);
-      videoUrl = `${urlObj.protocol}//${urlObj.host}${videoUrl}`;
-    }
-
-    videoUrl = cleanVideoUrl(videoUrl);
+    if (!videoUrl) throw new Error("Modiplay: Stream target missing");
 
     return {
       success: true,
@@ -605,13 +434,12 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
 }
 
 // ============================================================
-// MOVIEBOX API
+// MOVIEBOX API (Fixed Parsers & Fallbacks)
 // ============================================================
 
 async function fetchMovieBoxBearerToken(logger, forceRefresh = false) {
   const now = Date.now();
   if (!forceRefresh && movieBoxTokenCache.token && now < movieBoxTokenCache.expiresAt) {
-    logger.log("MOVIEBOX_TOKEN_CACHE", "Using cached bearer token");
     return movieBoxTokenCache.token;
   }
 
@@ -619,7 +447,6 @@ async function fetchMovieBoxBearerToken(logger, forceRefresh = false) {
   logger.log("MOVIEBOX_TOKEN_REQ", "Fetching new bearer token", { url });
   
   const response = await fetchUrl(url, { userAgent: DEFAULT_UA, timeout: 8000 });
-
   const xUserHeader = response.headers["x-user"];
   if (!xUserHeader) throw new Error("MovieBox: x-user header missing");
 
@@ -640,8 +467,7 @@ async function extractMovieBox(title, mediaType = "movie", season = null, episod
     "Referer": "https://fmoviesunblocked.net/",
     "Origin": "https://fmoviesunblocked.net",
     "User-Agent": DEFAULT_UA,
-    "Accept": "*/*",
-    "Accept-Encoding": "gzip",
+    "Accept": "application/json, text/plain, */*",
   };
 
   try {
@@ -675,39 +501,34 @@ async function extractMovieBox(title, mediaType = "movie", season = null, episod
     const targetTitleClean = cleanTitleString(title);
     const matchedSubjects = [];
 
-    // Collect ALL matching subjects (Original + Hindi / Dubbed versions)
     for (const item of items) {
       const rawTitle = item.title || "";
-      const subjectId = item.subjectId;
+      const subjectId = item.subjectId || item.id;
       if (!subjectId) continue;
 
       const itemCleanTitle = cleanTitleString(rawTitle);
-      if (itemCleanTitle === targetTitleClean || itemCleanTitle.includes(targetTitleClean)) {
-        const language = extractLanguageTag(rawTitle);
-        matchedSubjects.push({ subjectId: String(subjectId), language, rawTitle });
+      if (itemCleanTitle === targetTitleClean || itemCleanTitle.includes(targetTitleClean) || targetTitleClean.includes(itemCleanTitle)) {
+        matchedSubjects.push({ subjectId: String(subjectId), language: extractLanguageTag(rawTitle), rawTitle });
       }
     }
 
-    if (!matchedSubjects.length) {
-      // Fallback: Use the very first subject if exact title string match failed
-      const firstItem = items[0];
-      const rawTitle = firstItem.title || "";
+    if (!matchedSubjects.length && items.length > 0) {
+      const first = items[0];
       matchedSubjects.push({
-        subjectId: String(firstItem.subjectId || firstItem.id),
-        language: extractLanguageTag(rawTitle),
-        rawTitle
+        subjectId: String(first.subjectId || first.id),
+        language: extractLanguageTag(first.title || ""),
+        rawTitle: first.title || ""
       });
     }
 
-    logger.log("MOVIEBOX_MATCHED_SUBJECTS", `Matched ${matchedSubjects.length} target subject entries`, matchedSubjects);
+    logger.log("MOVIEBOX_MATCHED_SUBJECTS", `Matched ${matchedSubjects.length} subjects`, matchedSubjects);
 
     const candidateStreams = [];
     const subtitles = [];
-    const addedQualityKeys = new Set();
+    const addedKeys = new Set();
 
-    // Direct Play & Download requests for ALL matched subjects (skips failing /detail endpoint)
     for (const target of matchedSubjects) {
-      logger.log("MOVIEBOX_SUBJECT_FETCH", `Fetching streams for ${target.rawTitle} [ID: ${target.subjectId}]`);
+      logger.log("MOVIEBOX_SUBJECT_FETCH", `Fetching stream for ${target.rawTitle} [ID: ${target.subjectId}]`);
 
       const params = new URLSearchParams({ subjectId: target.subjectId });
       if (season !== null) params.append("se", String(season));
@@ -715,75 +536,60 @@ async function extractMovieBox(title, mediaType = "movie", season = null, episod
 
       const reqHeaders = {
         "Authorization": `Bearer ${token}`,
-        "Accept": "application/json",
         ...DEFAULT_HEADERS
       };
 
-      const playUrl = `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/play?${params.toString()}`;
-      const downloadUrl = `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/download?${params.toString()}`;
+      const endpoints = [
+        `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/play?${params.toString()}`,
+        `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/download?${params.toString()}`
+      ];
 
-      const [playRes, downloadRes] = await Promise.all([
-        fetchUrl(playUrl, { headers: reqHeaders }).catch(e => ({ data: "{}" })),
-        fetchUrl(downloadUrl, { headers: reqHeaders }).catch(e => ({ data: "{}" }))
-      ]);
+      for (const epUrl of endpoints) {
+        try {
+          const res = await fetchUrl(epUrl, { headers: reqHeaders });
+          const resObj = JSON.parse(res.data || "{}");
+          const dataPayload = unwrapData(resObj);
 
-      const playObj = JSON.parse(playRes.data || "{}");
-      const downloadObj = JSON.parse(downloadRes.data || "{}");
+          // Deep parse streams / URLs from dataPayload
+          const rawStreamList = [
+            ...(dataPayload.streams || []),
+            ...(dataPayload.downloads || []),
+            ...(dataPayload.playUrls || []),
+            ...(dataPayload.list || []),
+            ...(dataPayload.urls || [])
+          ];
 
-      const playData = unwrapData(playObj);
-      const downloadData = unwrapData(downloadObj);
-
-      // Process Downloads
-      const downloads = downloadData.downloads || [];
-      for (const d of downloads) {
-        let finalUrl = cleanVideoUrl(d.url || d.videoUrl || "");
-        if (finalUrl && !d.vipLocked) {
-          const resVal = String(d.resolution || "480");
-          const key = `${target.language}-${resVal}`;
-          if (!addedQualityKeys.has(key)) {
-            addedQualityKeys.add(key);
-            candidateStreams.push({
-              url: finalUrl,
-              resolution: resVal,
-              language: target.language
-            });
+          if (dataPayload.url || dataPayload.videoUrl) {
+            rawStreamList.push(dataPayload);
           }
-        }
-      }
 
-      // Process Streams & DASH
-      const streams = [...(playData.streams || []), ...(playData.dash || [])];
-      for (const s of streams) {
-        if (s.vipLocked) continue;
-        let finalUrl = cleanVideoUrl(s.url || s.videoUrl || "");
-        const signCookie = s.sign_cookie || s.signCookie;
-
-        if (!finalUrl && signCookie) {
-          finalUrl = cleanVideoUrl(dashManifestFromPolicy(signCookie) || "");
-        }
-
-        if (finalUrl) {
-          const resVal = String(s.resolutions || s.resolution || "auto");
-          const key = `${target.language}-${resVal}`;
-          if (!addedQualityKeys.has(key)) {
-            addedQualityKeys.add(key);
-            candidateStreams.push({
-              url: finalUrl,
-              resolution: resVal,
-              language: target.language
-            });
+          for (const s of rawStreamList) {
+            let finalUrl = cleanVideoUrl(s.url || s.videoUrl || s.playUrl || s.src || s.link || "");
+            if (finalUrl && !s.vipLocked) {
+              const resVal = String(s.resolution || s.definition || "auto");
+              const key = `${target.language}-${resVal}-${finalUrl}`;
+              if (!addedKeys.has(key)) {
+                addedKeys.add(key);
+                candidateStreams.push({
+                  url: finalUrl,
+                  resolution: resVal,
+                  language: target.language
+                });
+              }
+            }
           }
-        }
-      }
 
-      // Captions / Subtitles
-      const captions = downloadData.captions || playData.captions || [];
-      for (const c of captions) {
-        if (c.url) {
-          subtitles.push({
-            url: cleanVideoUrl(c.url),
-            language: c.lanName || c.lan || "English"
-          });
+          const captions = dataPayload.captions || dataPayload.subtitles || [];
+          for (const c of captions) {
+            if (c.url) {
+              subtitles.push({
+                url: cleanVideoUrl(c.url),
+                language: c.lanName || c.lan || c.language || "English"
+              });
+            }
+          }
+        } catch (e) {
+          logger.log("MOVIEBOX_EP_ERR", `Fetch failed for ${epUrl}: ${e.message}`);
         }
       }
     }
@@ -800,7 +606,6 @@ async function extractMovieBox(title, mediaType = "movie", season = null, episod
       headers: DEFAULT_HEADERS,
       quality: String(bestStream.resolution),
       qualities: candidateStreams,
-      audioTracks: [{ language: "Default", label: "DEF" }],
       subtitles: subtitles,
       debugLogs: logger.getLogs(),
     };
