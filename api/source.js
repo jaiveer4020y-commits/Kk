@@ -669,210 +669,331 @@ async function fetchMovieBoxEpisodePlay(episodeId, languageId, token, logger, re
   return [];
 }
 
-// Headers the CDN wants for playback (same as the CloudStream provider)
-const MOVIEBOX_PLAY_REFERER = "https://fmoviesunblocked.net/";
-const MOVIEBOX_PLAY_ORIGIN = "https://fmoviesunblocked.net";
+// ------------------------------------------------------------
+// MovieBox: CloudStream logic (one subject per dub) + region/rate-limit fallbacks
+// ------------------------------------------------------------
 
 function escapeRegex(str) {
   return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-const SEASON_SUFFIX_REGEX = /\s*(?:S\d+(?:-S?\d+)*|Season\s*\d+)$/i;
+// Same as the CloudStream provider: strips " S1-S5" / " S2" suffixes
+const SEASON_SUFFIX_REGEX = /\sS\d+(?:-S?\d+)*$/i;
 
-/**
- * CloudStream logic: every dub is its OWN subject in search results, titled
- * "Title" (original) and "Title [Hindi]" etc. Fetch each subject separately,
- * from BOTH /subject/download and /subject/play, and label by the [tag].
- */
+// Request identities tried in order for /subject/play and /subject/download.
+// "invalid region" / empty replies on one identity -> fall through to the next.
+const MOVIEBOX_PROFILES = [
+  {
+    name: "123movies",
+    base: MOVIEBOX_BASE_URL,
+    origin: "https://123moviesfree.club",
+    referer: (dp, id) => `https://123moviesfree.club/movies/${dp}?id=${id}&type=/movie/detail`,
+  },
+  {
+    name: "fmovies",
+    base: MOVIEBOX_BASE_URL,
+    origin: "https://fmoviesunblocked.net",
+    referer: (dp, id) => `https://fmoviesunblocked.net/spa/videoPlayPage/movies/${dp}?id=${id}&type=/movie/detail`,
+  },
+  {
+    // download only works through the site proxy on some IPs
+    name: "movieboxonline-proxy",
+    base: "https://movieboxonline.net",
+    origin: "https://movieboxonline.net",
+    referer: (dp) => `https://movieboxonline.net/play/${dp}`,
+  },
+];
+
+// /subject/play is rate limited (~1 good call per IP every couple of minutes),
+// so remember good results for a while.
+const MOVIEBOX_CACHE_TTL_MS = 10 * 60 * 1000;
+const movieBoxResultCache = new Map();
+
+function normalizeLanguage(name) {
+  let n = String(name || "").replace(/\s*(dub|dubbed|audio)\s*$/i, "").trim();
+  if (!n) return "Original";
+  if (n.toLowerCase() === "original") return "Original";
+  return n.charAt(0).toUpperCase() + n.slice(1);
+}
+
+function findDubs(obj, depth = 0) {
+  if (!obj || typeof obj !== "object" || depth > 5) return [];
+  if (Array.isArray(obj.dubs)) return obj.dubs;
+  for (const k of Object.keys(obj)) {
+    const r = findDubs(obj[k], depth + 1);
+    if (r.length) return r;
+  }
+  return [];
+}
+
+// Fetch one endpoint trying each identity until it returns something playable
+async function fetchMovieBoxEndpoint(kind, subjectId, detailPath, season, episode, baseHeaders, logger, label) {
+  const params = new URLSearchParams({ subjectId });
+  if (season !== null) {
+    params.append("se", String(season));
+    params.append("ep", String(episode ?? 1));
+  }
+  if (detailPath) params.append("detailPath", detailPath);
+
+  const listKeys = kind === "download" ? ["downloads"] : ["streams", "dash"];
+
+  for (const profile of MOVIEBOX_PROFILES) {
+    const referer = profile.referer(detailPath, subjectId);
+    try {
+      const r = await fetchUrl(`${profile.base}/wefeed-h5api-bff/subject/${kind}?${params.toString()}`, {
+        headers: { ...baseHeaders, "Referer": referer, "Origin": profile.origin },
+        timeout: 12000,
+      });
+      const data = unwrapData(JSON.parse(r.data || "{}"));
+      const hasItems = listKeys.some(k => Array.isArray(data[k]) && data[k].some(x => x && x.url && !x.vipLocked));
+      if (hasItems) {
+        logger.log("MOVIEBOX_ENDPOINT_OK", `${label} ${kind} via ${profile.name}`);
+        return { data, referer, origin: profile.origin };
+      }
+      logger.log("MOVIEBOX_ENDPOINT_EMPTY", `${label} ${kind} via ${profile.name}: no playable items`);
+    } catch (e) {
+      logger.log("MOVIEBOX_ENDPOINT_ERR", `${label} ${kind} via ${profile.name}: ${e.message}`);
+    }
+  }
+  return { data: {}, referer: null, origin: null };
+}
+
 async function extractMovieBox(title, mediaType = "movie", season = null, episode = null, isDebug = false) {
   const logger = createLogger(isDebug);
+  const isTv = mediaType === "tv";
+  const cacheKey = `${String(title).toLowerCase()}|${isTv ? `${season}x${episode}` : "movie"}`;
+
+  const cached = movieBoxResultCache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) {
+    logger.log("MOVIEBOX_CACHE_HIT", cacheKey);
+    return { ...cached.value, cached: true, debugLogs: logger.getLogs() };
+  }
 
   try {
     const token = await fetchMovieBoxBearerToken(logger);
-    const subjectType = (mediaType === "tv" || season !== null) ? 2 : 1;
-    const isTv = mediaType === "tv";
+    const subjectType = isTv ? 2 : 1;
+    const effSeason = isTv ? (season ?? 1) : null;
+    const effEpisode = isTv ? (episode ?? 1) : null;
 
     const baseHeaders = {
       "Authorization": `Bearer ${token}`,
       "Accept": "application/json",
+      "Accept-Language": "en-US,en;q=0.5",
       "User-Agent": DEFAULT_UA,
       "X-Client-Info": JSON.stringify({ timezone: "Africa/Nairobi" }),
     };
 
-    logger.log("MOVIEBOX_SEARCH_REQ", "Searching MovieBox for keyword", { title, subjectType });
+    // ---- 1. Search: plain title + "<title> Hindi" so the dub subject shows up
+    const searchOnce = async (keyword) => {
+      try {
+        const r = await fetchUrl(`${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/search`, {
+          method: "POST",
+          headers: { ...baseHeaders, "Content-Type": "application/json", "Referer": MOVIEBOX_BASE_URL },
+          body: { keyword, page: 1, perPage: 24, subjectType },
+        });
+        return unwrapData(JSON.parse(r.data))?.items || [];
+      } catch (e) {
+        logger.log("MOVIEBOX_SEARCH_ERR", `${keyword}: ${e.message}`);
+        return [];
+      }
+    };
 
-    const searchRes = await fetchUrl(`${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/search`, {
-      method: "POST",
-      headers: { ...baseHeaders, "Content-Type": "application/json", "Referer": MOVIEBOX_BASE_URL },
-      body: { keyword: title, page: 1, perPage: 24, subjectType },
-    });
+    logger.log("MOVIEBOX_SEARCH_REQ", "Searching MovieBox", { title, subjectType });
+    const [plain, hindi] = await Promise.all([searchOnce(title), searchOnce(`${title} Hindi`)]);
 
-    const searchObj = JSON.parse(searchRes.data);
-    const items = unwrapData(searchObj)?.items || [];
-    logger.log("MOVIEBOX_SEARCH_RES", `Found ${items.length} subjects`);
+    const seen = new Set();
+    const items = [];
+    for (const it of [...plain, ...hindi]) {
+      const id = String(it.subjectId || it.id || "");
+      if (id && !seen.has(id)) { seen.add(id); items.push(it); }
+    }
+    logger.log("MOVIEBOX_SEARCH_RES", `Found ${items.length} subjects (${plain.length} + ${hindi.length})`);
     if (!items.length) throw new Error("MovieBox: Search returned 0 results");
 
-    // --- Step 1: exact "Title" or "Title [Lang]" matches -> subjectId => language
+    // ---- 2. Exact "Title" / "Title [Lang]" matches => language groups
     const titleMatchRegex = new RegExp(`^${escapeRegex(title)}(?:\\s+\\[([^\\]]+)\\])?$`, "i");
-    const uniqueIdsWithLang = new Map();
+    const groups = new Map(); // language -> [{subjectId, detailPath, rawTitle}]
+    const addToGroup = (language, entry) => {
+      const lang = normalizeLanguage(language);
+      if (!groups.has(lang)) groups.set(lang, []);
+      const list = groups.get(lang);
+      if (!list.find(x => x.subjectId === entry.subjectId)) list.push(entry);
+    };
 
     for (const item of items) {
       const id = String(item.subjectId || item.id || "");
-      if (!id) continue;
       const cleanTitle = String(item.title || "").replace(SEASON_SUFFIX_REGEX, "").trim();
       const m = cleanTitle.match(titleMatchRegex);
       if (!m) continue;
-      const language = (m[1] || "Original").trim();
-      if (!uniqueIdsWithLang.has(id)) {
-        uniqueIdsWithLang.set(id, { language, detailPath: item.detailPath || "", rawTitle: item.title || "" });
-      }
+      addToGroup(m[1] || "Original", { subjectId: id, detailPath: item.detailPath || "", rawTitle: item.title || "" });
     }
 
-    // Fallback: loose match so odd titles still work
-    if (!uniqueIdsWithLang.size) {
+    // loose fallback so odd titles still work
+    if (!groups.size) {
       const target = cleanTitleString(title);
       for (const item of items) {
         const id = String(item.subjectId || item.id || "");
-        if (!id) continue;
         const c = cleanTitleString(item.title || "");
         if (c === target || c.includes(target) || target.includes(c)) {
-          if (!uniqueIdsWithLang.has(id)) {
-            uniqueIdsWithLang.set(id, {
-              language: extractLanguageTag(item.title || ""),
-              detailPath: item.detailPath || "",
-              rawTitle: item.title || "",
-            });
-          }
+          addToGroup(extractLanguageTag(item.title || ""), { subjectId: id, detailPath: item.detailPath || "", rawTitle: item.title || "" });
         }
       }
     }
-    if (!uniqueIdsWithLang.size) {
+    if (!groups.size) {
       const first = items[0];
-      uniqueIdsWithLang.set(String(first.subjectId || first.id), {
-        language: extractLanguageTag(first.title || ""),
-        detailPath: first.detailPath || "",
-        rawTitle: first.title || "",
+      addToGroup(extractLanguageTag(first.title || ""), {
+        subjectId: String(first.subjectId || first.id), detailPath: first.detailPath || "", rawTitle: first.title || "",
       });
     }
 
-    logger.log("MOVIEBOX_MATCHED_SUBJECTS", `Matched ${uniqueIdsWithLang.size} subjects`,
-      [...uniqueIdsWithLang.entries()].map(([id, v]) => ({ subjectId: id, ...v })));
+    // ---- 3. Dub discovery from the detail "dubs" array (adds Hindi etc. if search missed it)
+    try {
+      const anchor = (groups.get("Original") || [...groups.values()][0])[0];
+      const anchorPath = await getMovieBoxDetailPath(anchor.subjectId, anchor.detailPath, logger);
+      if (anchorPath) {
+        const dr = await fetchUrl(`${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/detail?detailPath=${encodeURIComponent(anchorPath)}`, {
+          headers: { ...baseHeaders, "Referer": MOVIEBOX_BASE_URL }, timeout: 10000,
+        });
+        const dubs = findDubs(JSON.parse(dr.data || "{}"));
+        logger.log("MOVIEBOX_DUBS", `Detail returned ${dubs.length} dub/sub entries`,
+          dubs.map(d => ({ lanName: d.lanName, kind: d.kind, original: d.original, subjectId: d.subjectId })));
+        for (const d of dubs) {
+          if (!d || !d.subjectId) continue;
+          if (d.kind === "subtitle" || d.type === 1) continue;
+          addToGroup(d.original ? "Original" : (d.lanName || "Unknown"), {
+            subjectId: String(d.subjectId), detailPath: d.detailPath || "", rawTitle: `${title} [${d.lanName || ""}]`,
+          });
+        }
+      }
+    } catch (e) {
+      logger.log("MOVIEBOX_DUBS_ERR", e.message);
+    }
+
+    logger.log("MOVIEBOX_GROUPS", `Languages: ${[...groups.keys()].join(", ")}`,
+      [...groups.entries()].map(([l, v]) => ({ language: l, subjects: v.map(x => x.subjectId) })));
 
     const subtitles = [];
-
-    // --- Step 2: fetch every subject (Original + Hindi + ...) in parallel
-    const perSubject = await Promise.all([...uniqueIdsWithLang.entries()].map(async ([subjectId, info]) => {
-      const language = info.language;
-      const out = [];
-      try {
-        const detailPath = await getMovieBoxDetailPath(subjectId, info.detailPath, logger);
-
-        const params = new URLSearchParams({ subjectId });
-        if (isTv) {
-          params.append("se", String(season ?? 1));
-          params.append("ep", String(episode ?? 1));
-        }
-        if (detailPath) params.append("detailPath", detailPath);
-
-        const reqHeaders = {
-          ...baseHeaders,
-          "Referer": `https://fmoviesunblocked.net/spa/videoPlayPage/movies/${detailPath}?id=${subjectId}&type=/movie/detail`,
-          "Origin": MOVIEBOX_PLAY_ORIGIN,
-        };
-
-        // BOTH endpoints at the same time
-        const getJson = async (path) => {
-          try {
-            const r = await fetchUrl(`${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/${path}?${params.toString()}`, { headers: reqHeaders });
-            return unwrapData(JSON.parse(r.data || "{}"));
-          } catch (e) {
-            logger.log("MOVIEBOX_EP_ERR", `${language} ${path} failed: ${e.message}`);
-            return {};
-          }
-        };
-        const [downloadData, playData] = await Promise.all([getJson("download"), getJson("play")]);
-
-        logger.log("MOVIEBOX_SUBJECT_RES", `${language} [${subjectId}]`, {
-          downloads: (downloadData.downloads || []).length,
-          streams: (playData.streams || []).length,
-        });
-
-        const addedQualities = new Set();
-        const playbackHeaders = { "Referer": MOVIEBOX_PLAY_REFERER, "Origin": MOVIEBOX_PLAY_ORIGIN, "User-Agent": DEFAULT_UA };
-
-        const pushStream = (s, resolution) => {
-          const rawUrl = s.url || s.videoUrl || s.playUrl || "";
-          let finalUrl = cleanVideoUrl(rawUrl);
-          const signCookie = s.sign_cookie || s.signCookie;
-          const cookieVal = cloudfrontCookie(signCookie);
-
-          if ((!finalUrl || finalUrl.includes('.mpd')) && signCookie) {
-            const manifest = dashManifestFromPolicy(signCookie);
-            if (manifest) finalUrl = manifest;
-          }
-          if (!finalUrl) return;
-
-          addedQualities.add(resolution);
-          const itemHeaders = { ...playbackHeaders };
-          if (cookieVal) itemHeaders["Cookie"] = cookieVal;
-
-          out.push({
-            rawTitle: info.rawTitle,
-            subjectId,
-            url: finalUrl,
-            urlWithHeaders: buildPipeUrl(finalUrl, itemHeaders),
-            headers: itemHeaders,
-            resolution: String(resolution || "auto"),
-            language,
-          });
-        };
-
-        for (const d of (downloadData.downloads || [])) {
-          if (d.vipLocked) continue;
-          const resolution = parseInt(d.resolution, 10) || 0;
-          if (d.url) pushStream(d, resolution);
-        }
-
-        for (const s of (playData.streams || [])) {
-          if (s.vipLocked) continue;
-          const resolution = parseInt(s.resolutions, 10) || parseInt(s.resolution, 10) || 0;
-          if (s.url && !addedQualities.has(resolution)) pushStream(s, resolution);
-        }
-
-        for (const c of [...(downloadData.captions || []), ...(playData.captions || [])]) {
-          if (c && c.url) {
-            subtitles.push({ url: cleanVideoUrl(c.url), language: c.lanName || c.lan || c.language || "English" });
-          }
-        }
-      } catch (e) {
-        logger.log("MOVIEBOX_SUBJECT_ERR", `${language} [${subjectId}]: ${e.message}`);
+    const subtitleSeen = new Set();
+    const addCaptions = (list) => {
+      for (const c of (list || [])) {
+        if (!c || !c.url || subtitleSeen.has(c.url)) continue;
+        subtitleSeen.add(c.url);
+        subtitles.push({ url: cleanVideoUrl(c.url), language: c.lanName || c.lan || c.language || "English" });
       }
-      return out;
+    };
+
+    // ---- 4. Every language in parallel; inside a language try candidate subjects until one yields streams
+    const perLanguage = await Promise.all([...groups.entries()].map(async ([language, entries]) => {
+      for (const entry of entries) {
+        const out = [];
+        try {
+          const detailPath = await getMovieBoxDetailPath(entry.subjectId, entry.detailPath, logger);
+          const label = `${language}[${entry.subjectId}]`;
+
+          // BOTH endpoints at the same time (CloudStream logic)
+          const [dl, pl] = await Promise.all([
+            fetchMovieBoxEndpoint("download", entry.subjectId, detailPath, effSeason, effEpisode, baseHeaders, logger, label),
+            fetchMovieBoxEndpoint("play", entry.subjectId, detailPath, effSeason, effEpisode, baseHeaders, logger, label),
+          ]);
+
+          const downloadData = dl.data;
+          const playData = pl.data;
+          const refererUsed = pl.referer || dl.referer || MOVIEBOX_PLAY_FALLBACK_REFERER(detailPath, entry.subjectId);
+          const originUsed = pl.origin || dl.origin || "https://123moviesfree.club";
+          const playbackHeaders = { "Referer": refererUsed, "Origin": originUsed, "User-Agent": DEFAULT_UA, "Accept": "*/*" };
+
+          const addedQualities = new Set();
+          const push = (s, resolution, kind) => {
+            let finalUrl = cleanVideoUrl(s.url || s.videoUrl || s.playUrl || "");
+            const signCookie = s.sign_cookie || s.signCookie;
+            const cookieVal = cloudfrontCookie(signCookie);
+            if ((!finalUrl || finalUrl.includes(".mpd")) && signCookie) {
+              const manifest = dashManifestFromPolicy(signCookie);
+              if (manifest) finalUrl = manifest;
+            }
+            if (!finalUrl || finalUrl.includes("macdn.aoneroom.com/other/")) return;
+
+            const itemHeaders = { ...playbackHeaders };
+            if (cookieVal) itemHeaders["Cookie"] = cookieVal;
+
+            out.push({
+              rawTitle: entry.rawTitle,
+              subjectId: entry.subjectId,
+              url: finalUrl,
+              urlWithHeaders: buildPipeUrl(finalUrl, itemHeaders),
+              headers: itemHeaders,
+              resolution: kind === "dash" ? "auto" : String(resolution || "auto"),
+              type: kind,
+              language,
+            });
+          };
+
+          // 1) downloads
+          for (const d of (downloadData.downloads || [])) {
+            if (!d || d.vipLocked || !d.url) continue;
+            const resolution = parseInt(d.resolution, 10) || 0;
+            addedQualities.add(resolution);
+            push(d, resolution, "mp4");
+          }
+          // 2) play streams (skip resolutions already added)
+          for (const s of (playData.streams || [])) {
+            if (!s || s.vipLocked || !s.url) continue;
+            const resolution = parseInt(s.resolutions, 10) || parseInt(s.resolution, 10) || 0;
+            if (addedQualities.has(resolution)) continue;
+            addedQualities.add(resolution);
+            push(s, resolution, "mp4");
+          }
+          // 3) DASH
+          for (const d of (playData.dash || [])) {
+            if (!d || d.vipLocked || !d.url) continue;
+            push(d, 0, "dash");
+          }
+
+          addCaptions(downloadData.captions);
+          addCaptions(playData.captions);
+
+          logger.log("MOVIEBOX_SUBJECT_RES", `${label}: ${out.length} streams`, {
+            downloads: (downloadData.downloads || []).length,
+            streams: (playData.streams || []).length,
+            dash: (playData.dash || []).length,
+          });
+
+          if (out.length) return out;
+        } catch (e) {
+          logger.log("MOVIEBOX_SUBJECT_ERR", `${language}[${entry.subjectId}]: ${e.message}`);
+        }
+      }
+      return [];
     }));
 
-    const candidateStreams = perSubject.flat();
-    if (!candidateStreams.length) throw new Error("MovieBox: Stream sources unavailable");
+    const candidateStreams = perLanguage.flat();
+    if (!candidateStreams.length) {
+      throw new Error("MovieBox: Stream sources unavailable (invalid region / rate limited - see debug logs)");
+    }
 
-    // One best stream per language: Original + Hindi together
-    const topTwoStreams = selectTopTwoStreams(candidateStreams);
+    // One best non-DASH stream per language (Original first, then Hindi)
+    const playable = candidateStreams.filter(s => s.type !== "dash");
+    const topTwoStreams = selectTopTwoStreams(playable.length ? playable : candidateStreams);
     const primaryStream = topTwoStreams[0] || candidateStreams[0];
 
     const audioTracks = [];
     for (const st of candidateStreams) {
-      if (!audioTracks.find(t => t.language === st.language)) {
-        const best = topTwoStreams.find(t => t.language === st.language) || st;
-        audioTracks.push({
-          language: st.language,
-          label: st.language.substring(0, 3).toUpperCase(),
-          subjectId: st.subjectId,
-          url: best.url,
-          urlWithHeaders: best.urlWithHeaders,
-          headers: best.headers,
-        });
-      }
+      if (audioTracks.find(t => t.language === st.language)) continue;
+      const best = topTwoStreams.find(t => t.language === st.language)
+        || selectTopTwoStreams(candidateStreams.filter(x => x.language === st.language && x.type !== "dash"))[0]
+        || st;
+      audioTracks.push({
+        language: st.language,
+        label: st.language.substring(0, 3).toUpperCase(),
+        subjectId: st.subjectId,
+        url: best.url,
+        urlWithHeaders: best.urlWithHeaders,
+        headers: best.headers,
+        resolution: best.resolution,
+      });
     }
 
-    return {
+    const result = {
       success: true,
       source: "moviebox",
       topTwo: topTwoStreams,
@@ -885,12 +1006,18 @@ async function extractMovieBox(title, mediaType = "movie", season = null, episod
       qualities: candidateStreams,
       audioTracks,
       subtitles,
-      debugLogs: logger.getLogs(),
     };
+
+    movieBoxResultCache.set(cacheKey, { expires: Date.now() + MOVIEBOX_CACHE_TTL_MS, value: result });
+    return { ...result, debugLogs: logger.getLogs() };
   } catch (error) {
     logger.log("MOVIEBOX_FATAL_ERROR", error.message);
     return { success: false, source: "moviebox", error: error.message, debugLogs: logger.getLogs() };
   }
+}
+
+function MOVIEBOX_PLAY_FALLBACK_REFERER(detailPath, subjectId) {
+  return `https://123moviesfree.club/movies/${detailPath}?id=${subjectId}&type=/movie/detail`;
 }
 
 // ============================================================
@@ -915,9 +1042,10 @@ module.exports = async (req, res) => {
       });
     }
 
-    const season = s ? parseInt(s, 10) : 1;
-    const episode = e ? parseInt(e, 10) : 1;
     const mediaType = type.toLowerCase() === "movie" ? "movie" : "tv";
+    // Movies must NOT carry season/episode (it flips MovieBox/Castle into TV mode)
+    const season = mediaType === "tv" ? (s ? parseInt(s, 10) : 1) : null;
+    const episode = mediaType === "tv" ? (e ? parseInt(e, 10) : 1) : null;
 
     const fetchTasks = [];
 
@@ -934,7 +1062,11 @@ module.exports = async (req, res) => {
     }
 
     const results = await Promise.all(fetchTasks);
-    const successfulResult = results.find((r) => r.success);
+
+    // Priority: MovieBox (multi-audio) > Castle > Modiplay
+    const priority = { moviebox: 0, castle: 1, modiplay: 2 };
+    const successes = results.filter((r) => r.success).sort((a, b) => (priority[a.source] ?? 9) - (priority[b.source] ?? 9));
+    const successfulResult = successes[0];
 
     if (successfulResult) {
       const topTwo = successfulResult.topTwo || [];
@@ -944,10 +1076,7 @@ module.exports = async (req, res) => {
       return res.status(200).json({
         success: true,
         source: successfulResult.source,
-        sideBySide: {
-          player1: player1,
-          player2: player2
-        },
+        sideBySide: { player1, player2 },
         topTwoResults: topTwo,
         videoUrl: successfulResult.videoUrl,
         urlWithHeaders: successfulResult.urlWithHeaders || null,
@@ -956,6 +1085,13 @@ module.exports = async (req, res) => {
         qualities: successfulResult.qualities || [],
         audioTracks: successfulResult.audioTracks || [],
         subtitles: successfulResult.subtitles || [],
+        // every working source, so the player can fall back
+        sources: successes.map((r) => ({
+          source: r.source,
+          videoUrl: r.videoUrl,
+          urlWithHeaders: r.urlWithHeaders || null,
+          audioTracks: r.audioTracks || [],
+        })),
         allResults: results,
       });
     }
