@@ -1,7 +1,6 @@
 /**
  * Triple Video Source API - Castle + Modiplay + MovieBox
- * Fixes applied for Stranger Things S5 (Nested Castle IDs, MovieBox key matching, Modiplay JS unpacking)
- * Endpoint: /api/source?title=Stranger+Things&id=66732&type=tv&s=5&e=1&source=all
+ * Endpoint: /api/source?title=Stranger+Things&id=66732&type=tv&s=5&e=1&source=all&debug=true
  */
 
 console.log("API route /api/source module loaded");
@@ -31,8 +30,25 @@ const DEFAULT_UA = "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 
 let movieBoxTokenCache = { token: null, expiresAt: 0 };
 
 // ============================================================
-// UTILITIES & DEPACKERS
+// UTILITIES & LOGGER
 // ============================================================
+
+function createLogger(isDebug) {
+  const logs = [];
+  return {
+    log: (step, message, details = null) => {
+      if (isDebug) {
+        logs.push({
+          time: new Date().toISOString(),
+          step,
+          message,
+          ...(details !== null && details !== undefined ? { details } : {})
+        });
+      }
+    },
+    getLogs: () => logs
+  };
+}
 
 function fetchUrl(urlString, options = {}) {
   return new Promise((resolve, reject) => {
@@ -56,7 +72,7 @@ function fetchUrl(urlString, options = {}) {
           if (res.statusCode >= 200 && res.statusCode < 400) {
             resolve({ data, statusCode: res.statusCode, headers: res.headers });
           } else {
-            reject(new Error(`HTTP ${res.statusCode}`));
+            reject(new Error(`HTTP ${res.statusCode}: ${data.substring(0, 150)}`));
           }
         });
       });
@@ -78,15 +94,17 @@ function fetchUrl(urlString, options = {}) {
   });
 }
 
+// Clean and safe pipe URL builder (Encodes both keys and values properly)
 function buildPipeUrl(url, headers = {}) {
+  if (!url) return "";
   const pairs = Object.entries(headers)
-    .filter(([_, v]) => v !== undefined && v !== null)
-    .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+    .filter(([_, v]) => v !== undefined && v !== null && String(v).trim() !== "")
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
     .join('&');
   return pairs ? `${url}|${pairs}` : url;
 }
 
-// Unpacks Dean Edwards packed JavaScript: eval(function(p,a,c,k,e,r)...)
+// Dean Edwards JavaScript unpacker
 function unpackJS(packedCode) {
   try {
     const match = packedCode.match(/}\s*\('(.*)',\s*(\d+),\s*(\d+),\s*'(.*)'\s*\.split\('\Vert{}'\)/);
@@ -141,7 +159,7 @@ function dashManifestFromPolicy(signCookie) {
 }
 
 // ============================================================
-// CASTLE API - DECRYPTION & FIXED EXTRACTOR
+// CASTLE API - DECRYPTION & DEBUGGED EXTRACTOR
 // ============================================================
 
 function decryptCastle(cipherText, securityKey) {
@@ -165,15 +183,17 @@ function decryptCastle(cipherText, securityKey) {
   return decrypted.toString('utf-8');
 }
 
-async function getCastleSecurityKey() {
+async function getCastleSecurityKey(logger) {
   const url = `${CASTLE_API}/v0.1/system/getSecurityKey/1?channel=${CASTLE_CONFIG.channel}&clientType=${CASTLE_CONFIG.clientType}&lang=${CASTLE_CONFIG.lang}`;
+  logger.log("CASTLE_KEY_REQ", "Fetching Castle security key", { url });
   const response = await fetchUrl(url, { headers: { "Accept": "application/json" } });
   const data = JSON.parse(response.data);
-  if (!data.data) throw new Error("Castle security key not found");
+  if (!data.data) throw new Error("Castle security key response empty");
+  logger.log("CASTLE_KEY_RES", "Security key obtained successfully");
   return data.data;
 }
 
-async function castleRequest(url, securityKey, options = {}) {
+async function castleRequest(url, securityKey, logger, options = {}) {
   const response = await fetchUrl(url, {
     method: options.method || "GET",
     headers: {
@@ -195,13 +215,16 @@ async function castleRequest(url, securityKey, options = {}) {
   return (result.data && typeof result.data === 'object') ? result.data : result;
 }
 
-async function castleSearch(title, securityKey) {
+async function castleSearch(title, securityKey, logger) {
   const encoded = encodeURIComponent(title);
   const url = `${CASTLE_API}/film-api/v1.1.0/movie/searchByKeyword?channel=${CASTLE_CONFIG.channel}&clientType=${CASTLE_CONFIG.clientType}&keyword=${encoded}&lang=${CASTLE_CONFIG.lang}&mode=1&packageName=${CASTLE_CONFIG.packageName}&page=1&size=30`;
+  logger.log("CASTLE_SEARCH_REQ", "Searching Castle for keyword", { title, url });
 
-  const data = await castleRequest(url, securityKey);
+  const data = await castleRequest(url, securityKey, logger);
   const rows = data.rows || data.list || [];
-  if (!rows.length) throw new Error("Castle: No search results");
+  logger.log("CASTLE_SEARCH_RES", `Search returned ${rows.length} results`);
+
+  if (!rows.length) throw new Error("Castle: No search results found");
 
   let movieId = "";
   for (const row of rows) {
@@ -216,16 +239,18 @@ async function castleSearch(title, securityKey) {
     movieId = String(rows[0].id || rows[0].redirectId || rows[0].redirectIdStr || "");
   }
 
-  if (!movieId) throw new Error("Castle: Movie ID not found");
+  if (!movieId) throw new Error("Castle: Movie ID resolution failed");
+  logger.log("CASTLE_SEARCH_MATCH", `Selected Movie ID: ${movieId}`);
   return movieId;
 }
 
-async function castleGetDetails(movieId, securityKey) {
+async function castleGetDetails(movieId, securityKey, logger) {
   const url = `${CASTLE_API}/film-api/v1.9.9/movie?channel=${CASTLE_CONFIG.channel}&clientType=${CASTLE_CONFIG.clientType}&lang=${CASTLE_CONFIG.lang}&movieId=${movieId}&packageName=${CASTLE_CONFIG.packageName}`;
-  return await castleRequest(url, securityKey);
+  logger.log("CASTLE_DETAIL_REQ", `Fetching details for movieId: ${movieId}`);
+  return await castleRequest(url, securityKey, logger);
 }
 
-async function castleGetVideo(targetMovieId, episodeId, securityKey, resolution = "2") {
+async function castleGetVideo(targetMovieId, episodeId, securityKey, resolution, logger) {
   const url = `${CASTLE_API}/film-api/v2.0.1/movie/getVideo2?clientType=${CASTLE_CONFIG.clientType}&packageName=${CASTLE_CONFIG.packageName}&channel=${CASTLE_CONFIG.channel}&lang=${CASTLE_CONFIG.lang}`;
   
   const body = {
@@ -242,20 +267,23 @@ async function castleGetVideo(targetMovieId, episodeId, securityKey, resolution 
     packageName: CASTLE_CONFIG.packageName,
   };
 
-  return await castleRequest(url, securityKey, { method: "POST", body });
+  logger.log("CASTLE_GETVIDEO_REQ", `Executing getVideo2 [movieId: ${targetMovieId}, episodeId: ${episodeId}, res: ${resolution}]`);
+  return await castleRequest(url, securityKey, logger, { method: "POST", body });
 }
 
-async function extractCastle(title, season = null, episode = null) {
+async function extractCastle(title, season = null, episode = null, isDebug = false) {
+  const logger = createLogger(isDebug);
   try {
-    const securityKey = await getCastleSecurityKey();
-    const rootMovieId = await castleSearch(title, securityKey);
-    let details = await castleGetDetails(rootMovieId, securityKey);
+    const securityKey = await getCastleSecurityKey(logger);
+    const rootMovieId = await castleSearch(title, securityKey, logger);
+    let details = await castleGetDetails(rootMovieId, securityKey, logger);
     
     let effectiveMovieId = rootMovieId;
 
-    // Match season across multiple parameter representations
     if (season !== null && episode !== null) {
       const seasons = details.seasons || details.seasonList || details.seasonsList || [];
+      logger.log("CASTLE_SEASONS_PARSE", `Found ${seasons.length} season entries in details payload`);
+      
       if (seasons.length > 0) {
         const seasonData = seasons.find(s => {
           const sNum = s.number ?? s.seasonIndex ?? s.season ?? s.sort;
@@ -264,14 +292,16 @@ async function extractCastle(title, season = null, episode = null) {
 
         if (seasonData && seasonData.movieId) {
           effectiveMovieId = String(seasonData.movieId);
+          logger.log("CASTLE_SEASON_MATCH", `Season ${season} matched. Switch to season movieId: ${effectiveMovieId}`);
           try {
-            details = await castleGetDetails(effectiveMovieId, securityKey);
-          } catch (e) {}
+            details = await castleGetDetails(effectiveMovieId, securityKey, logger);
+          } catch (e) {
+            logger.log("CASTLE_SEASON_DETAIL_ERR", `Season detail fetch failed: ${e.message}`);
+          }
         }
       }
     }
 
-    // Collect all candidate episode lists
     let episodes = details.episodes || details.episodeList || details.list || [];
     if (!episodes.length && details.seasons) {
       for (const s of details.seasons) {
@@ -283,7 +313,8 @@ async function extractCastle(title, season = null, episode = null) {
       }
     }
 
-    if (!episodes.length) throw new Error("Castle: No episodes found for season");
+    logger.log("CASTLE_EPISODES_PARSE", `Total episodes extracted: ${episodes.length}`);
+    if (!episodes.length) throw new Error("Castle: Season episode list empty");
 
     let episodeData = null;
     if (season !== null && episode !== null) {
@@ -293,34 +324,48 @@ async function extractCastle(title, season = null, episode = null) {
       });
     }
     if (!episodeData) episodeData = episodes[0];
-    if (!episodeData) throw new Error("Castle: Episode data missing");
+    if (!episodeData) throw new Error("Castle: Episode data object missing");
 
     const episodeId = String(episodeData.id || episodeData.episodeId || episodeData.movieId);
+    logger.log("CASTLE_EPISODE_MATCH", `Matched episode payload`, { episodeId, episodeData });
 
-    // Fallback Matrix: Try combination of effectiveMovieId vs rootMovieId + multiple resolutions
     let videoUrl = "";
     let videoData = {};
 
-    const idCandidates = [effectiveMovieId, rootMovieId].filter((v, i, a) => v && a.indexOf(v) === i);
+    // Combine all potential IDs and try all resolution profiles
+    const idCandidates = [
+      episodeData.movieId,
+      episodeData.id,
+      effectiveMovieId,
+      rootMovieId
+    ].filter((v, i, a) => v && a.indexOf(String(v)) === i);
+
     const resCandidates = ["2", "1", "3", "auto"];
+
+    logger.log("CASTLE_ATTEMPT_MATRIX", `Testing candidate IDs: [${idCandidates.join(", ")}] across resolutions: [${resCandidates.join(", ")}]`);
 
     for (const mid of idCandidates) {
       for (const resChoice of resCandidates) {
         try {
-          videoData = await castleGetVideo(mid, episodeId, securityKey, resChoice);
+          videoData = await castleGetVideo(mid, episodeId, securityKey, resChoice, logger);
           videoUrl = videoData.videoUrl || videoData.url || videoData.playUrl || videoData.m3u8Url || videoData.streamUrl || "";
           
           if (!videoUrl && Array.isArray(videoData.list) && videoData.list.length > 0) {
             videoUrl = videoData.list[0].url || videoData.list[0].videoUrl || videoData.list[0].playUrl || "";
           }
 
-          if (videoUrl) break;
-        } catch (e) {}
+          if (videoUrl) {
+            logger.log("CASTLE_STREAM_SUCCESS", `Stream URL retrieved!`, { mid, resChoice, videoUrl });
+            break;
+          }
+        } catch (e) {
+          logger.log("CASTLE_ATTEMPT_FAILED", `Attempt [mid: ${mid}, res: ${resChoice}] failed: ${e.message}`);
+        }
       }
       if (videoUrl) break;
     }
 
-    if (!videoUrl) throw new Error("Castle: Stream URL unavailable for this episode");
+    if (!videoUrl) throw new Error("Castle: Stream URL unavailable across all fallback attempts");
 
     return {
       success: true,
@@ -328,25 +373,31 @@ async function extractCastle(title, season = null, episode = null) {
       videoUrl: videoUrl,
       subtitles: videoData.subtitles || videoData.subtitleList || [],
       quality: "auto",
+      debugLogs: logger.getLogs(),
     };
   } catch (error) {
+    logger.log("CASTLE_FATAL_ERROR", error.message);
     return {
       success: false,
       source: "castle",
       error: error.message,
+      debugLogs: logger.getLogs(),
     };
   }
 }
 
 // ============================================================
-// MODIPLAY - FIXED EXTRACTOR WITH UNPACKER
+// MODIPLAY - DEBUGGED EXTRACTOR WITH UNPACKER
 // ============================================================
 
-async function extractModiplay(mediaId, mediaType = "tv", season = null, episode = null) {
+async function extractModiplay(mediaId, mediaType = "tv", season = null, episode = null, isDebug = false) {
+  const logger = createLogger(isDebug);
   try {
     let embedUrl = (mediaType === "tv" && season && episode)
       ? `${MODIPLAY_API}/embed/tmdb/tv?id=${mediaId}&s=${season}&e=${episode}`
       : `${MODIPLAY_API}/embed/tmdb/${mediaType}?id=${mediaId}`;
+
+    logger.log("MODIPLAY_EMBED_REQ", "Fetching embed page", { embedUrl });
 
     const embedResponse = await fetchUrl(embedUrl, {
       userAgent: DEFAULT_UA,
@@ -357,12 +408,16 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
     const iframeMatch = embedResponse.data.match(/<iframe\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/i);
     if (iframeMatch) playerUrl = iframeMatch[1].trim();
 
-    if (!playerUrl) throw new Error("Modiplay: Player iframe source not found");
+    logger.log("MODIPLAY_IFRAME_PARSE", `Player iframe target: ${playerUrl || "NOT_FOUND"}`);
+
+    if (!playerUrl) throw new Error("Modiplay: Player iframe source missing");
 
     if (playerUrl.startsWith('/')) {
       const urlObj = new URL(embedUrl);
       playerUrl = `${urlObj.protocol}//${urlObj.host}${playerUrl}`;
     }
+
+    logger.log("MODIPLAY_PLAYER_REQ", "Fetching player page script", { playerUrl });
 
     const playerResponse = await fetchUrl(playerUrl, {
       userAgent: DEFAULT_UA,
@@ -370,37 +425,60 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
     });
 
     let html = playerResponse.data;
-    
-    // Unpack obfuscated JS if present
-    if (html.includes("eval(function(p,a,c,k,e,")) {
+    const isPacked = html.includes("eval(function(p,a,c,k,e,");
+    logger.log("MODIPLAY_OBFUSCATION_CHECK", `Is packed JS: ${isPacked}`);
+
+    if (isPacked) {
       html = unpackJS(html);
+      logger.log("MODIPLAY_UNPACKED_JS", `Unpacked code size: ${html.length} chars`);
     }
 
     let videoUrl = "";
+
+    // Comprehensive Extractor Pattern Array
     const regexList = [
       /var\s+directSrc\s*=\s*["']([^"']+)["']/,
       /var\s+src\s*=\s*["']([^"']+)["']/,
       /file\s*:\s*["']([^"']+)["']/,
       /source\s*:\s*["']([^"']+)["']/,
       /["']file["']\s*:\s*["']([^"']+)["']/,
-      /src\s*:\s*["'](https?:\/\/[^"']+)["']/
+      /src\s*:\s*["'](https?:\/\/[^"']+)["']/,
+      /sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+)["']/
     ];
 
-    for (const reg of regexList) {
-      const match = html.match(reg);
+    for (let idx = 0; idx < regexList.length; idx++) {
+      const match = html.match(regexList[idx]);
       if (match && match[1]) {
         videoUrl = match[1].trim();
+        logger.log("MODIPLAY_REGEX_MATCH", `Matched pattern index ${idx}`, { videoUrl });
         break;
       }
     }
 
-    // Direct m3u8 scan fallback
+    // Direct Stream File Regex Scan
     if (!videoUrl) {
       const streamMatch = html.match(/(https?:\/\/[^"'\s]+\.(?:m3u8|mp4)[^"'\s]*)/i);
-      if (streamMatch) videoUrl = streamMatch[1];
+      if (streamMatch) {
+        videoUrl = streamMatch[1];
+        logger.log("MODIPLAY_STREAM_SCAN_MATCH", `Direct m3u8/mp4 scan matched`, { videoUrl });
+      }
     }
 
-    if (!videoUrl) throw new Error("Modiplay: Direct stream source not found");
+    // Base64 Decryption Fallback
+    if (!videoUrl) {
+      const b64Match = html.match(/atob\(["']([A-Za-z0-9+/=]+)["']\)/);
+      if (b64Match) {
+        try {
+          const decoded = Buffer.from(b64Match[1], 'base64').toString('utf-8');
+          if (decoded.startsWith('http')) {
+            videoUrl = decoded;
+            logger.log("MODIPLAY_B64_MATCH", "Decoded Base64 video URL", { videoUrl });
+          }
+        } catch (e) {}
+      }
+    }
+
+    if (!videoUrl) throw new Error("Modiplay: Video source not found in unpacked player payload");
 
     try { videoUrl = decodeURIComponent(videoUrl); } catch (e) {}
 
@@ -414,44 +492,52 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
       source: "modiplay",
       videoUrl: videoUrl,
       quality: "auto",
+      debugLogs: logger.getLogs(),
     };
   } catch (error) {
+    logger.log("MODIPLAY_FATAL_ERROR", error.message);
     return {
       success: false,
       source: "modiplay",
       error: error.message,
+      debugLogs: logger.getLogs(),
     };
   }
 }
 
 // ============================================================
-// MOVIEBOX - FIXED EXTRACTOR WITH FLEXIBLE KEYS
+// MOVIEBOX - DEBUGGED EXTRACTOR
 // ============================================================
 
-async function fetchMovieBoxBearerToken(forceRefresh = false) {
+async function fetchMovieBoxBearerToken(logger, forceRefresh = false) {
   const now = Date.now();
   if (!forceRefresh && movieBoxTokenCache.token && now < movieBoxTokenCache.expiresAt) {
+    logger.log("MOVIEBOX_TOKEN_CACHE", "Using cached bearer token");
     return movieBoxTokenCache.token;
   }
 
   const url = `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/app/get-latest-app-pkgs?app_name=moviebox`;
+  logger.log("MOVIEBOX_TOKEN_REQ", "Fetching new bearer token", { url });
+  
   const response = await fetchUrl(url, { userAgent: DEFAULT_UA, timeout: 8000 });
 
   const xUserHeader = response.headers["x-user"];
-  if (!xUserHeader) throw new Error("MovieBox: Missing x-user header");
+  if (!xUserHeader) throw new Error("MovieBox: x-user header missing");
 
   const parsed = JSON.parse(xUserHeader);
   if (parsed && parsed.token) {
     movieBoxTokenCache = { token: parsed.token, expiresAt: now + 3600 * 1000 * 3 };
+    logger.log("MOVIEBOX_TOKEN_SUCCESS", "Bearer token obtained");
     return parsed.token;
   }
 
-  throw new Error("MovieBox: Unable to obtain bearer token");
+  throw new Error("MovieBox: Bearer token parsing failed");
 }
 
-async function searchMovieBox(title, mediaType = "movie") {
-  const token = await fetchMovieBoxBearerToken();
+async function searchMovieBox(title, mediaType, logger) {
+  const token = await fetchMovieBoxBearerToken(logger);
   const url = `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/search`;
+  logger.log("MOVIEBOX_SEARCH_REQ", "Searching MovieBox for keyword", { title, mediaType });
 
   const response = await fetchUrl(url, {
     method: "POST",
@@ -473,11 +559,14 @@ async function searchMovieBox(title, mediaType = "movie") {
   let inner = bodyJson.data || {};
   if (inner.data) inner = inner.data;
 
-  return inner.items || inner.subjects || [];
+  const items = inner.items || inner.subjects || [];
+  logger.log("MOVIEBOX_SEARCH_RES", `Found ${items.length} subjects`);
+  return items;
 }
 
-async function getMovieBoxSubjectDetail(subjectId, token) {
+async function getMovieBoxSubjectDetail(subjectId, token, logger) {
   const url = `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/${subjectId}/detail`;
+  logger.log("MOVIEBOX_DETAIL_REQ", `Fetching subject detail for ID: ${subjectId}`);
   try {
     const res = await fetchUrl(url, {
       method: "POST",
@@ -486,12 +575,14 @@ async function getMovieBoxSubjectDetail(subjectId, token) {
     });
     return JSON.parse(res.data).data || {};
   } catch (e) {
+    logger.log("MOVIEBOX_DETAIL_ERR", `Detail fetch error: ${e.message}`);
     return {};
   }
 }
 
-async function fetchMovieBoxEpisodePlay(episodeId, languageId, token) {
+async function fetchMovieBoxEpisodePlay(episodeId, languageId, token, logger) {
   const url = `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/episode/${episodeId}/play`;
+  logger.log("MOVIEBOX_PLAY_REQ", `Fetching episode play sources for episodeId: ${episodeId}`);
   try {
     const res = await fetchUrl(url, {
       method: "POST",
@@ -500,40 +591,40 @@ async function fetchMovieBoxEpisodePlay(episodeId, languageId, token) {
     });
     return JSON.parse(res.data).data?.sources || [];
   } catch (e) {
+    logger.log("MOVIEBOX_PLAY_ERR", `Episode play fetch error: ${e.message}`);
     return [];
   }
 }
 
-async function extractMovieBox(title, mediaType = "movie", season = 1, episode = 1, preferredLanguage = "english") {
+async function extractMovieBox(title, mediaType = "movie", season = 1, episode = 1, preferredLanguage = "english", isDebug = false) {
+  const logger = createLogger(isDebug);
   try {
-    const token = await fetchMovieBoxBearerToken();
-    const items = await searchMovieBox(title, mediaType);
+    const token = await fetchMovieBoxBearerToken(logger);
+    const items = await searchMovieBox(title, mediaType, logger);
 
-    if (!items.length) throw new Error("MovieBox: Search returned no results");
+    if (!items.length) throw new Error("MovieBox: Search returned 0 results");
 
     const matchedItem = items[0];
     const subjectId = String(matchedItem.subjectId || matchedItem.id || "");
     const detailPath = matchedItem.detailPath || "";
 
-    if (!subjectId) throw new Error("MovieBox: Invalid subject ID");
+    logger.log("MOVIEBOX_SUBJECT_MATCH", `Selected subjectId: ${subjectId}, detailPath: ${detailPath}`);
+
+    if (!subjectId) throw new Error("MovieBox: Subject ID missing");
 
     let candidateStreams = [];
 
-    // STEP A: Detail tree parsing with flexible numeric season & episode key lookups
-    const detailTree = await getMovieBoxSubjectDetail(subjectId, token);
+    // STEP A: Detail tree parsing
+    const detailTree = await getMovieBoxSubjectDetail(subjectId, token, logger);
     if (detailTree && detailTree.seasons) {
       const seasonsObj = detailTree.seasons;
-      let matchedSeasonKey = Object.keys(seasonsObj).find(k => {
-        const num = k.replace(/\D/g, '');
-        return Number(num) === Number(season);
-      });
+      let matchedSeasonKey = Object.keys(seasonsObj).find(k => Number(k.replace(/\D/g, '')) === Number(season));
+      logger.log("MOVIEBOX_SEASON_KEY", `Matched season key: ${matchedSeasonKey || "NONE"}`);
 
       if (matchedSeasonKey) {
         const seasonData = seasonsObj[matchedSeasonKey] || {};
-        let matchedEpKey = Object.keys(seasonData).find(k => {
-          const num = k.replace(/\D/g, '');
-          return Number(num) === Number(episode);
-        });
+        let matchedEpKey = Object.keys(seasonData).find(k => Number(k.replace(/\D/g, '')) === Number(episode));
+        logger.log("MOVIEBOX_EPISODE_KEY", `Matched episode key: ${matchedEpKey || "NONE"}`);
 
         const episodeData = matchedEpKey ? seasonData[matchedEpKey] : null;
         const episodeId = episodeData?.id;
@@ -550,7 +641,7 @@ async function extractMovieBox(title, mediaType = "movie", season = 1, episode =
           }
           if (!selectedLangId && tracks.length > 0) selectedLangId = tracks[0].languageId;
 
-          const sources = await fetchMovieBoxEpisodePlay(episodeId, selectedLangId, token);
+          const sources = await fetchMovieBoxEpisodePlay(episodeId, selectedLangId, token, logger);
           for (const s of sources) {
             if (s.vipLocked) continue;
             let finalUrl = s.url || s.videoUrl || "";
@@ -569,13 +660,14 @@ async function extractMovieBox(title, mediaType = "movie", season = 1, episode =
       }
     }
 
-    // STEP B: Direct Play API Fallback
+    // STEP B: Fallback Direct Play API
     if (!candidateStreams.length && detailPath) {
       const params = `subjectId=${subjectId}&detailPath=${encodeURIComponent(detailPath)}` + 
         (mediaType !== "movie" ? `&se=${season}&ep=${episode}` : "");
       
       const playUrl = `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/play?${params}`;
-      
+      logger.log("MOVIEBOX_FALLBACK_REQ", `Executing fallback play API`, { playUrl });
+
       try {
         const playRes = await fetchUrl(playUrl, {
           headers: {
@@ -602,7 +694,9 @@ async function extractMovieBox(title, mediaType = "movie", season = 1, episode =
             });
           }
         }
-      } catch (e) {}
+      } catch (e) {
+        logger.log("MOVIEBOX_FALLBACK_ERR", `Fallback play error: ${e.message}`);
+      }
     }
 
     if (!candidateStreams.length) throw new Error("MovieBox: Stream sources unavailable");
@@ -624,18 +718,21 @@ async function extractMovieBox(title, mediaType = "movie", season = 1, episode =
       urlWithHeaders: buildPipeUrl(bestStream.url, primaryHeaders),
       headers: primaryHeaders,
       quality: String(bestStream.resolution),
+      debugLogs: logger.getLogs(),
     };
   } catch (error) {
+    logger.log("MOVIEBOX_FATAL_ERROR", error.message);
     return {
       success: false,
       source: "moviebox",
       error: error.message,
+      debugLogs: logger.getLogs(),
     };
   }
 }
 
 // ============================================================
-// MAIN VERCEL HANDLER
+// MAIN HANDLER
 // ============================================================
 
 module.exports = async (req, res) => {
@@ -646,12 +743,13 @@ module.exports = async (req, res) => {
   if (req.method === "OPTIONS") return res.status(204).end();
 
   try {
-    const { id, title, type = "tv", s, e, source = "all" } = req.query;
+    const { id, title, type = "tv", s, e, source = "all", debug } = req.query;
+    const isDebug = debug === "true" || debug === "1";
 
     if (!id && !title) {
       return res.status(400).json({
         success: false,
-        error: "Missing required query parameters: 'id' or 'title'",
+        error: "Missing required parameter: 'id' or 'title'",
       });
     }
 
@@ -662,15 +760,15 @@ module.exports = async (req, res) => {
     const fetchTasks = [];
 
     if ((source === "all" || source === "moviebox") && title) {
-      fetchTasks.push(extractMovieBox(title, mediaType, season, episode));
+      fetchTasks.push(extractMovieBox(title, mediaType, season, episode, "english", isDebug));
     }
 
     if ((source === "all" || source === "castle") && title) {
-      fetchTasks.push(extractCastle(title, season, episode));
+      fetchTasks.push(extractCastle(title, season, episode, isDebug));
     }
 
     if ((source === "all" || source === "modiplay") && id) {
-      fetchTasks.push(extractModiplay(id, mediaType, season, episode));
+      fetchTasks.push(extractModiplay(id, mediaType, season, episode, isDebug));
     }
 
     const results = await Promise.all(fetchTasks);
