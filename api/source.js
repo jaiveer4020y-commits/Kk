@@ -1,6 +1,7 @@
 /**
  * Triple Video Source API - Castle + Modiplay + MovieBox
  * Fixed: GZIP decompression in fetchUrl & Castle empty stream handling
+ * Feature: Side-by-Side Dual Stream Extraction with Hindi Prioritization
  */
 
 const https = require('https');
@@ -214,6 +215,43 @@ function cloudfrontCookie(signCookie) {
   return parts.length ? parts.join('; ') : null;
 }
 
+/**
+ * Filter streams to get top 2 side-by-side results:
+ * - Prioritizes up to 2 streams with "Hindi" text/language metadata.
+ * - If fewer than 2 Hindi streams exist, fills remaining slots with top regular streams.
+ * - If no Hindi stream exists, defaults to the first 2 raw streams.
+ */
+function selectTopTwoStreams(streams) {
+  if (!streams || !streams.length) return [];
+
+  const hindiStreams = [];
+  const otherStreams = [];
+
+  for (const item of streams) {
+    const lang = String(item.language || '').toLowerCase();
+    const title = String(item.rawTitle || item.title || '').toLowerCase();
+    const resolution = String(item.resolution || '').toLowerCase();
+    const url = String(item.url || '').toLowerCase();
+
+    if (lang.includes('hindi') || title.includes('hindi') || resolution.includes('hindi') || url.includes('hindi')) {
+      hindiStreams.push(item);
+    } else {
+      otherStreams.push(item);
+    }
+  }
+
+  // Pick up to 2 Hindi streams first
+  const selected = hindiStreams.slice(0, 2);
+
+  // Fill remaining slots with top non-Hindi streams if needed
+  if (selected.length < 2) {
+    const needed = 2 - selected.length;
+    selected.push(...otherStreams.slice(0, needed));
+  }
+
+  return selected;
+}
+
 // ============================================================
 // CASTLE API
 // ============================================================
@@ -425,9 +463,20 @@ async function extractCastle(title, season = null, episode = null, isDebug = fal
       throw new Error(`Castle: Season ${season} Episode ${episode} is unmapped or unavailable`);
     }
 
+    const streamObj = {
+      url: videoUrl,
+      urlWithHeaders: videoUrl,
+      headers: {},
+      resolution: "auto",
+      language: "Original"
+    };
+
     return {
       success: true,
       source: "castle",
+      topTwo: [streamObj],
+      player1: streamObj,
+      player2: null,
       videoUrl: videoUrl,
       subtitles: videoData.subtitles || [],
       quality: "auto",
@@ -504,9 +553,20 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
 
     if (!videoUrl) throw new Error("Modiplay: Stream target missing");
 
+    const streamObj = {
+      url: videoUrl,
+      urlWithHeaders: videoUrl,
+      headers: {},
+      resolution: "auto",
+      language: "Original"
+    };
+
     return {
       success: true,
       source: "modiplay",
+      topTwo: [streamObj],
+      player1: streamObj,
+      player2: null,
       videoUrl: videoUrl,
       quality: "auto",
       debugLogs: logger.getLogs(),
@@ -774,7 +834,7 @@ async function extractMovieBox(title, mediaType = "movie", season = null, episod
         }
       }
 
-      // Process raw stream items without skipping/deduplication
+      // Process raw stream items without skipping
       for (const s of collectedSources) {
         if (s.vipLocked) continue;
 
@@ -795,6 +855,7 @@ async function extractMovieBox(title, mediaType = "movie", season = null, episod
           if (cookieVal) itemHeaders["Cookie"] = cookieVal;
 
           candidateStreams.push({
+            rawTitle: target.rawTitle,
             url: finalUrl,
             urlWithHeaders: buildPipeUrl(finalUrl, itemHeaders),
             headers: itemHeaders,
@@ -807,15 +868,20 @@ async function extractMovieBox(title, mediaType = "movie", season = null, episod
 
     if (!candidateStreams.length) throw new Error("MovieBox: Stream sources unavailable");
 
-    const bestStream = candidateStreams[0];
+    // Filter down to the top 2 streams side-by-side with Hindi text prioritization
+    const topTwoStreams = selectTopTwoStreams(candidateStreams);
+    const primaryStream = topTwoStreams[0] || candidateStreams[0];
 
     return {
       success: true,
       source: "moviebox",
-      videoUrl: bestStream.url,
-      urlWithHeaders: bestStream.urlWithHeaders,
-      headers: bestStream.headers,
-      quality: String(bestStream.resolution),
+      topTwo: topTwoStreams,
+      player1: topTwoStreams[0] || null,
+      player2: topTwoStreams[1] || null,
+      videoUrl: primaryStream.url,
+      urlWithHeaders: primaryStream.urlWithHeaders,
+      headers: primaryStream.headers,
+      quality: String(primaryStream.resolution),
       qualities: candidateStreams,
       subtitles: subtitles,
       debugLogs: logger.getLogs(),
@@ -875,9 +941,18 @@ module.exports = async (req, res) => {
     const successfulResult = results.find((r) => r.success);
 
     if (successfulResult) {
+      const topTwo = successfulResult.topTwo || [];
+      const player1 = successfulResult.player1 || topTwo[0] || null;
+      const player2 = successfulResult.player2 || topTwo[1] || null;
+
       return res.status(200).json({
         success: true,
         source: successfulResult.source,
+        sideBySide: {
+          player1: player1,
+          player2: player2
+        },
+        topTwoResults: topTwo,
         videoUrl: successfulResult.videoUrl,
         urlWithHeaders: successfulResult.urlWithHeaders || null,
         headers: successfulResult.headers || null,
