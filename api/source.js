@@ -1,10 +1,11 @@
 /**
  * Triple Video Source API - Castle + Modiplay + MovieBox
- * Endpoint: /api/source?title=Stranger+Things&id=66732&type=tv&s=5&e=1&source=all&debug=true
+ * Fixed: GZIP decompression in fetchUrl & Castle empty stream handling
  */
 
 const https = require('https');
 const http = require('http');
+const zlib = require('zlib');
 const { URL } = require('url');
 const crypto = require('crypto');
 
@@ -82,15 +83,32 @@ function fetchUrl(urlString, options = {}) {
         method: options.method || "GET",
         headers: {
           "User-Agent": options.userAgent || DEFAULT_UA,
+          "Accept-Encoding": "gzip, deflate, br",
           ...options.headers,
         },
         timeout: options.timeout || 20000,
       };
 
       const req = protocol.request(url, requestOptions, (res) => {
-        let data = "";
-        res.on("data", (chunk) => { data += chunk; });
+        const chunks = [];
+        res.on("data", (chunk) => chunks.push(chunk));
         res.on("end", () => {
+          let buffer = Buffer.concat(chunks);
+          const encoding = res.headers["content-encoding"];
+
+          try {
+            if (encoding === "gzip") {
+              buffer = zlib.gunzipSync(buffer);
+            } else if (encoding === "deflate") {
+              buffer = zlib.inflateSync(buffer);
+            } else if (encoding === "br") {
+              buffer = zlib.brotliDecompressSync(buffer);
+            }
+          } catch (e) {
+            // Fall back to raw buffer if decompression fails
+          }
+
+          const data = buffer.toString("utf-8");
           if (res.statusCode >= 200 && res.statusCode < 400) {
             resolve({ data, statusCode: res.statusCode, headers: res.headers });
           } else {
@@ -205,35 +223,35 @@ function decrypt_castle(cipherText, securityKey) {
   const keyWords = Buffer.from(securityKey, 'base64');
   const combined = Buffer.concat([keyWords, pepper]);
   const keyMaterial = combined.slice(0, 16);
-  
+
   const cipherBytes = Buffer.from(cipherText, 'base64');
   const decipher = crypto.createDecipheriv('aes-128-cbc', keyMaterial, keyMaterial);
-  
+
   let decrypted = decipher.update(cipherBytes);
   decrypted = Buffer.concat([decrypted, decipher.final()]);
-  
+
   const padding = decrypted[decrypted.length - 1];
   if (padding >= 1 && padding <= 16) {
     decrypted = decrypted.slice(0, decrypted.length - padding);
   }
-  
+
   return decrypted.toString('utf-8');
 }
 
 async function getCastleSecurityKey(logger) {
   const url = `${CASTLE_API}/v0.1/system/getSecurityKey/1?channel=${CASTLE_CONFIG.channel}&clientType=${CASTLE_CONFIG.clientType}&lang=${CASTLE_CONFIG.lang}`;
   logger.log("CASTLE_KEY_REQ", "Fetching Castle security key", { url });
-  
+
   const response = await fetchUrl(url, {
     headers: {
       "Accept": "application/json",
       "Accept-Language": "en-US,en;q=0.9",
     },
   });
-  
+
   const data = JSON.parse(response.data);
   const securityKey = data.data;
-  
+
   if (!securityKey) {
     throw new Error("Castle security key not found");
   }
@@ -314,7 +332,7 @@ async function castleGetDetails(movieId, securityKey, logger) {
 
 async function castleGetVideo(movieId, episodeId, securityKey, logger) {
   const url = `${CASTLE_API}/film-api/v2.0.1/movie/getVideo2?clientType=${CASTLE_CONFIG.clientType}&packageName=${CASTLE_CONFIG.packageName}&channel=${CASTLE_CONFIG.channel}&lang=${CASTLE_CONFIG.lang}`;
-  
+
   const body = {
     mode: "1",
     appMarket: "GuanWang",
@@ -362,7 +380,6 @@ async function extractCastle(title, season = null, episode = null, isDebug = fal
           effectiveMovieId = seasonMovieId;
         }
       } else {
-        // Fallback search for Season specific title
         const seasonQuery = `${title} Season ${season}`;
         logger.log("CASTLE_SEASON_FALLBACK", `Searching specific season keyword: ${seasonQuery}`);
         try {
@@ -383,7 +400,7 @@ async function extractCastle(title, season = null, episode = null, isDebug = fal
     }
 
     if (!episodes.length) {
-      throw new Error(`Castle: No episodes found for S${season}E${episode}`);
+      throw new Error(`Castle: Season ${season} is not available`);
     }
 
     let episodeData = null;
@@ -405,7 +422,7 @@ async function extractCastle(title, season = null, episode = null, isDebug = fal
     const videoUrl = cleanVideoUrl(videoData.videoUrl || videoData.url || videoData.playUrl || "");
 
     if (!videoUrl) {
-      throw new Error("Castle: Video stream URL empty");
+      throw new Error(`Castle: Season ${season} Episode ${episode} is unmapped or unavailable`);
     }
 
     return {
@@ -517,7 +534,7 @@ async function fetchMovieBoxBearerToken(logger, forceRefresh = false) {
 
   const url = `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/app/get-latest-app-pkgs?app_name=moviebox`;
   logger.log("MOVIEBOX_TOKEN_REQ", "Fetching new bearer token", { url });
-  
+
   const response = await fetchUrl(url, { userAgent: DEFAULT_UA, timeout: 8000 });
   const xUserHeader = response.headers["x-user"];
   if (!xUserHeader) throw new Error("MovieBox: x-user header missing");
@@ -666,13 +683,12 @@ async function extractMovieBox(title, mediaType = "movie", season = null, episod
       logger.log("MOVIEBOX_SUBJECT_FETCH", `Fetching stream for ${target.rawTitle} [ID: ${target.subjectId}]`);
 
       const detailPath = await getMovieBoxDetailPath(target.subjectId, target.detailPath, logger);
-      
+
       const streamHeaders = {
         "Referer": `https://123moviesfree.club/movies/${detailPath}?id=${target.subjectId}&type=/movie/detail`,
         "Origin": "https://123moviesfree.club",
         "User-Agent": DEFAULT_UA,
         "Accept": "*/*",
-        "Accept-Encoding": "gzip",
       };
 
       let collectedSources = [];
