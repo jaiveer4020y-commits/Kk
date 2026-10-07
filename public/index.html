@@ -795,12 +795,15 @@
             padding: 12px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.8);
             z-index: 9999;
-            min-width: 200px;
+            min-width: 240px;
+            max-height: 70vh;
             display: none;
             border: 1px solid #333;
+            display: flex;
+            flex-direction: column;
         }
         #server-menu.visible {
-            display: block;
+            display: flex;
         }
         #server-menu h4 {
             color: #fff;
@@ -809,7 +812,17 @@
             margin: 0 0 8px 0;
             padding-bottom: 8px;
             border-bottom: 1px solid #333;
+            flex-shrink: 0;
         }
+        #server-list {
+            overflow-y: auto;
+            flex: 1;
+            scrollbar-width: thin;
+            scrollbar-color: #555 transparent;
+        }
+        #server-list::-webkit-scrollbar { width: 6px; }
+        #server-list::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
+        #server-list::-webkit-scrollbar-track { background: transparent; }
         .server-option {
             display: flex;
             align-items: center;
@@ -819,7 +832,10 @@
             cursor: pointer;
             border-radius: 4px;
             transition: background 0.15s;
-            font-size: 14px;
+            font-size: 13px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         .server-option:hover {
             background: rgba(255,255,255,0.1);
@@ -832,6 +848,7 @@
         .server-option .check-icon {
             margin-left: auto;
             visibility: hidden;
+            flex-shrink: 0;
         }
         .server-option.active .check-icon {
             visibility: visible;
@@ -1219,7 +1236,7 @@ const remainingTimeDisplay = document.getElementById('remaining-time');
    NEW: SERVER SOURCES STATE
    ------------------------------------------------------------------------- */
 let currentServer = 'default';
-let availableServers = {}; // { moviebox: [...], castle: {...}, modiplay: {...} }
+let availableServers = {}; // { github: {...}, castle: {...}, modiplay: {...}, moviebox: [...] }
 let currentMediaTitle = '';
 let currentMediaId = '';
 let currentMediaType = '';
@@ -1334,15 +1351,50 @@ async function fetchAllSources(title, id, type, s, e) {
         
         availableServers = {};
         
+        // Add the original GitHub source first
+        if (type === 'movie' && data.videoUrl) {
+            // The original GitHub source is handled separately, but we can add it here
+        }
+
         if (data.sources && Array.isArray(data.sources)) {
             data.sources.forEach(source => {
                 if (source.source === 'moviebox') {
                     if (!availableServers['moviebox']) availableServers['moviebox'] = [];
-                    availableServers['moviebox'].push(source);
+                    // Parse all qualities and audio tracks
+                    const qualities = source.qualities || [];
+                    if (qualities.length > 0) {
+                        qualities.forEach(q => {
+                            if (q.urlWithHeaders) {
+                                availableServers['moviebox'].push({
+                                    label: `MovieBox [${q.language} ${q.resolution}p]`,
+                                    url: `https://workingg.vercel.app/api/proxy?url=${encodeURIComponent(q.urlWithHeaders)}`
+                                });
+                            }
+                        });
+                    } else if (source.urlWithHeaders) {
+                        // Fallback to the main urlWithHeaders if no qualities array
+                        availableServers['moviebox'].push({
+                            label: `MovieBox [Original]`,
+                            url: `https://workingg.vercel.app/api/proxy?url=${encodeURIComponent(source.urlWithHeaders)}`
+                        });
+                    }
                 } else if (source.source === 'castle') {
-                    availableServers['castle'] = source;
+                    availableServers['castle'] = {
+                        label: 'Castle',
+                        url: `https://workingg.vercel.app/api/proxy?url=${encodeURIComponent(source.videoUrl)}&mode=master`
+                    };
                 } else if (source.source === 'modiplay') {
-                    availableServers['modiplay'] = source;
+                    let rawUrl = source.videoUrl;
+                    let finalUrl = '';
+                    if (rawUrl.startsWith('/')) {
+                        finalUrl = `https://rozgarlelo.modiplay.xyz${rawUrl}`;
+                    } else {
+                        finalUrl = rawUrl;
+                    }
+                    availableServers['modiplay'] = {
+                        label: 'ModiPlay',
+                        url: finalUrl
+                    };
                 }
             });
         }
@@ -1358,13 +1410,14 @@ function updateServerMenu() {
     serverList.innerHTML = '';
     
     const servers = [
-        { key: 'moviebox', name: 'MovieBox', icon: '📦' },
+        { key: 'github', name: 'GitHub (Original)', icon: '📁' },
         { key: 'castle', name: 'Castle', icon: '🏰' },
         { key: 'modiplay', name: 'ModiPlay', icon: '▶️' }
     ];
     
     let hasServers = false;
     
+    // Add standard servers
     servers.forEach(s => {
         if (availableServers[s.key]) {
             hasServers = true;
@@ -1378,38 +1431,48 @@ function updateServerMenu() {
             serverList.appendChild(div);
         }
     });
+
+    // Add MovieBox options
+    if (availableServers['moviebox'] && availableServers['moviebox'].length > 0) {
+        hasServers = true;
+        const header = document.createElement('div');
+        header.style.cssText = 'color:#fff; font-size:12px; font-weight:bold; margin-top:8px; margin-bottom:4px; padding-left:12px;';
+        header.textContent = 'MovieBox';
+        serverList.appendChild(header);
+        
+        availableServers['moviebox'].forEach((opt, idx) => {
+            const div = document.createElement('div');
+            div.className = `server-option ${currentServer === 'moviebox_' + idx ? 'active' : ''}`;
+            div.innerHTML = `<span>📦 ${opt.label}</span><span class="check-icon">✓</span>`;
+            div.onclick = () => {
+                playServer('moviebox', idx);
+                serverMenu.classList.remove('visible');
+            };
+            serverList.appendChild(div);
+        });
+    }
     
     if (!hasServers) {
         serverList.innerHTML = '<div class="server-option" style="color:#b3b3b3; cursor:default;">No servers available</div>';
     }
 }
 
-function playServer(serverKey) {
+function playServer(serverKey, subIndex) {
     let url = '';
-    let sourceData = availableServers[serverKey];
     
-    if (serverKey === 'moviebox') {
-        // Use the first one that has a urlWithHeaders
-        const validSource = sourceData.find(s => s.urlWithHeaders);
-        if (!validSource) return;
-        // Proxy the urlWithHeaders
-        url = `https://workingg.vercel.app/api/proxy?url=${encodeURIComponent(validSource.urlWithHeaders)}`;
-    } else if (serverKey === 'castle') {
-        // Proxy the videoUrl with mode=master
-        url = `https://workingg.vercel.app/api/proxy?url=${encodeURIComponent(sourceData.videoUrl)}&mode=master`;
-    } else if (serverKey === 'modiplay') {
-        let rawUrl = sourceData.videoUrl;
-        if (rawUrl.startsWith('/')) {
-            // Prepend the modiplay domain
-            url = `https://rozgarlelo.modiplay.xyz${rawUrl}`;
-        } else {
-            // Direct play
-            url = rawUrl;
-        }
+    if (serverKey === 'moviebox' && subIndex !== undefined) {
+        const opt = availableServers['moviebox'][subIndex];
+        if (!opt) return;
+        url = opt.url;
+        currentServer = 'moviebox_' + subIndex;
+    } else {
+        const sourceData = availableServers[serverKey];
+        if (!sourceData) return;
+        url = sourceData.url;
+        currentServer = serverKey;
     }
     
     if (url) {
-        currentServer = serverKey;
         updateServerMenu();
         initHlsPlayer(url);
     }
@@ -2751,10 +2814,20 @@ document.addEventListener('keydown', handleKeyboardShortcuts);
    ------------------------------------------------------------------------- */
 function isDirectVideoUrl(url) {
     if (url && url.startsWith('blob:')) return true;
-    // If it's a proxied URL from our new servers, assume HLS unless it's explicitly an mp4
-    if (url.includes('workingg.vercel.app') || url.includes('modiplay.xyz')) {
-        return false;
+    // If it's a proxied URL from our new servers, check if the underlying URL is an mp4
+    if (url.includes('workingg.vercel.app/api/proxy')) {
+        try {
+            const urlParam = new URL(url).searchParams.get('url');
+            if (urlParam) {
+                const decoded = decodeURIComponent(urlParam);
+                // Check if decoded URL is an mp4 or has referer info
+                if (decoded.includes('.mp4') || decoded.includes('|')) return true;
+            }
+        } catch(e) {}
     }
+    // If it's a ModiPlay URL, it's likely HLS, not MP4
+    if (url.includes('modiplay.xyz')) return false;
+    
     try {
         const path = new URL(url).pathname.toLowerCase();
         return /\.(mp4|webm|ogg|ogv|mov|mkv|avi|flv|m4v|ts|mts|m2ts)(\?|$)/.test(path);
@@ -3049,6 +3122,12 @@ async function playMovie(movieId) {
         }
 
         if (cleanUrl && (cleanUrl.includes('.m3u8') || cleanUrl.includes('http'))) {
+            // Add the original GitHub source to availableServers
+            availableServers['github'] = {
+                label: 'GitHub (Original)',
+                url: cleanUrl
+            };
+            
             initHlsPlayer(cleanUrl);
             loadSubtitlesFromUrlset(cleanUrl);
             loadSubtitlesFromGithub('movie', movieId);
@@ -3172,6 +3251,12 @@ async function playEpisode(seriesId, seasonNumber, episodeNumber) {
         }
 
         if (fileId) {
+            // Add the original GitHub source to availableServers
+            availableServers['github'] = {
+                label: 'GitHub (Original)',
+                url: fileId
+            };
+
             initHlsPlayer(fileId);
             loadSubtitlesFromUrlset(fileId);
             loadSubtitlesFromGithub('tv', seriesId, seasonNumber, episodeNumber);
