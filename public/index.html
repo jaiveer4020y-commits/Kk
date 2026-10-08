@@ -795,15 +795,14 @@
             padding: 12px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.8);
             z-index: 9999;
-            min-width: 240px;
-            max-height: 70vh;
+            min-width: 220px;
             display: none;
             border: 1px solid #333;
-            display: flex;
-            flex-direction: column;
+            max-height: 60vh;
+            overflow-y: auto;
         }
         #server-menu.visible {
-            display: flex;
+            display: block;
         }
         #server-menu h4 {
             color: #fff;
@@ -812,17 +811,7 @@
             margin: 0 0 8px 0;
             padding-bottom: 8px;
             border-bottom: 1px solid #333;
-            flex-shrink: 0;
         }
-        #server-list {
-            overflow-y: auto;
-            flex: 1;
-            scrollbar-width: thin;
-            scrollbar-color: #555 transparent;
-        }
-        #server-list::-webkit-scrollbar { width: 6px; }
-        #server-list::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
-        #server-list::-webkit-scrollbar-track { background: transparent; }
         .server-option {
             display: flex;
             align-items: center;
@@ -832,10 +821,7 @@
             cursor: pointer;
             border-radius: 4px;
             transition: background 0.15s;
-            font-size: 13px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            font-size: 14px;
         }
         .server-option:hover {
             background: rgba(255,255,255,0.1);
@@ -848,10 +834,17 @@
         .server-option .check-icon {
             margin-left: auto;
             visibility: hidden;
-            flex-shrink: 0;
         }
         .server-option.active .check-icon {
             visibility: visible;
+        }
+        .server-group-title {
+            color: #666;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            padding: 8px 12px 4px;
+            margin-top: 4px;
         }
     </style>
 <style>*, ::before, ::after{--tw-border-spacing-x:0;--tw-border-spacing-y:0;--tw-translate-x:0;--tw-translate-y:0;--tw-rotate:0;--tw-skew-x:0;--tw-skew-y:0;--tw-scale-x:1;--tw-scale-y:1;--tw-pan-x: ;--tw-pan-y: ;--tw-pinch-zoom: ;--tw-scroll-snap-strictness:proximity;--tw-gradient-from-position: ;--tw-gradient-via-position: ;--tw-gradient-to-position: ;--tw-ordinal: ;--tw-slashed-zero: ;--tw-numeric-figure: ;--tw-numeric-spacing: ;--tw-numeric-fraction: ;--tw-ring-inset: ;--tw-ring-offset-width:0px;--tw-ring-offset-color:#fff;--tw-ring-color:rgb(59 130 246 / 0.5);--tw-ring-offset-shadow:0 0 #0000;--tw-ring-shadow:0 0 #0000;--tw-shadow:0 0 #0000;--tw-shadow-colored:0 0 #0000;--tw-blur: ;--tw-brightness: ;--tw-contrast: ;--tw-grayscale: ;--tw-hue-rotate: ;--tw-invert: ;--tw-saturate: ;--tw-sepia: ;--tw-drop-shadow: ;--tw-backdrop-blur: ;--tw-backdrop-brightness: ;--tw-backdrop-contrast: ;--tw-backdrop-grayscale: ;--tw-backdrop-hue-rotate: ;--tw-backdrop-invert: ;--tw-backdrop-opacity: ;--tw-backdrop-saturate: ;--tw-backdrop-sepia: ;--tw-contain-size: ;--tw-contain-layout: ;--tw-contain-paint: ;--tw-contain-style: }::backdrop{--tw-border-spacing-x:0;--tw-border-spacing-y:0;--tw-translate-x:0;--tw-translate-y:0;--tw-rotate:0;--tw-skew-x:0;--tw-skew-y:0;--tw-scale-x:1;--tw-scale-y:1;--tw-pan-x: ;--tw-pan-y: ;--tw-pinch-zoom: ;--tw-scroll-snap-strictness:proximity;--tw-gradient-from-position: ;--tw-gradient-via-position: ;--tw-gradient-to-position: ;--tw-ordinal: ;--tw-slashed-zero: ;--tw-numeric-figure: ;--tw-numeric-spacing: ;--tw-numeric-fraction: ;--tw-ring-inset: ;--tw-ring-offset-width:0px;--tw-ring-offset-color:#fff;--tw-ring-color:rgb(59 130 246 / 0.5);--tw-ring-offset-shadow:0 0 #0000;--tw-ring-shadow:0 0 #0000;--tw-shadow:0 0 #0000;--tw-shadow-colored:0 0 #0000;--tw-blur: ;--tw-brightness: ;--tw-contrast: ;--tw-grayscale: ;--tw-hue-rotate: ;--tw-invert: ;--tw-saturate: ;--tw-sepia: ;--tw-drop-shadow: ;--tw-backdrop-blur: ;--tw-backdrop-brightness: ;--tw-backdrop-contrast: ;--tw-backdrop-grayscale: ;--tw-backdrop-hue-rotate: ;--tw-backdrop-invert: ;--tw-backdrop-opacity: ;--tw-backdrop-saturate: ;--tw-backdrop-sepia: ;--tw-contain-size: ;--tw-contain-layout: ;--tw-contain-paint: ;--tw-contain-style: }/* ! tailwindcss v3.4.17 | MIT License | https://tailwindcss.com */*,::after,::before{box-sizing:border-box;border-width:0;border-style:solid;border-color:#e5e7eb}::after,::before{--tw-content:''}:host,html{line-height:1.5;-webkit-text-size-adjust:100%;-moz-tab-size:4;tab-size:4;font-family:ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";font-feature-settings:normal;font-variation-settings:normal;-webkit-tap-highlight-color:transparent}body{margin:0;line-height:inherit}hr{height:0;color:inherit;border-top-width:1px}abbr:where([title]){-webkit-text-decoration:underline dotted;text-decoration:underline dotted}h1,h2,h3,h4,h5,h6{font-size:inherit;font-weight:inherit}a{color:inherit;text-decoration:inherit}b,strong{font-weight:bolder}code,kbd,pre,samp{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;font-feature-settings:normal;font-variation-settings:normal;font-size:1em}small{font-size:80%}sub,sup{font-size:75%;line-height:0;position:relative;vertical-align:baseline}sub{bottom:-.25em}sup{top:-.5em}table{text-indent:0;border-color:inherit;border-collapse:collapse}button,input,optgroup,select,textarea{font-family:inherit;font-feature-settings:inherit;font-variation-settings:inherit;font-size:100%;font-weight:inherit;line-height:inherit;letter-spacing:inherit;color:inherit;margin:0;padding:0}button,select{text-transform:none}button,input:where([type=button]),input:where([type=reset]),input:where([type=submit]){-webkit-appearance:button;background-color:transparent;background-image:none}:-moz-focusring{outline:auto}:-moz-ui-invalid{box-shadow:none}progress{vertical-align:baseline}::-webkit-inner-spin-button,::-webkit-outer-spin-button{height:auto}[type=search]{-webkit-appearance:textfield;outline-offset:-2px}::-webkit-search-decoration{-webkit-appearance:none}::-webkit-file-upload-button{-webkit-appearance:button;font:inherit}summary{display:list-item}blockquote,dd,dl,figure,h1,h2,h3,h4,h5,h6,hr,p,pre{margin:0}fieldset{margin:0;padding:0}legend{padding:0}menu,ol,ul{list-style:none;margin:0;padding:0}dialog{padding:0}textarea{resize:vertical}input::placeholder,textarea::placeholder{opacity:1;color:#9ca3af}[role=button],button{cursor:pointer}:disabled{cursor:default}audio,canvas,embed,iframe,img,object,svg,video{display:block;vertical-align:middle}img,video{max-width:100%;height:auto}[hidden]:where(:not([hidden=until-found])){display:none}.pointer-events-none{pointer-events:none}.pointer-events-auto{pointer-events:auto}.absolute{position:absolute}.relative{position:relative}.inset-0{inset:0px}.inset-y-0{top:0px;bottom:0px}.bottom-0{bottom:0px}.bottom-12{bottom:3rem}.left-0{left:0px}.left-1\/2{left:50%}.right-0{right:0px}.right-1\/2{right:50%}.top-0{top:0px}.top-1\/2{top:50%}.z-10{z-index:10}.z-20{z-index:20}.z-30{z-index:30}.mb-2{margin-bottom:0.5rem}.mt-4{margin-top:1rem}.flex{display:flex}.hidden{display:none}.h-10{height:2.5rem}.h-12{height:3rem}.h-20{height:5rem}.h-24{height:6rem}.h-4{height:1rem}.h-6{height:1.5rem}.h-full{height:100%}.max-h-56{max-height:14rem}.min-h-0{min-height:0px}.w-10{width:2.5rem}.w-12{width:3rem}.w-2{width:0.5rem}.w-20{width:5rem}.w-4{width:1rem}.w-6{width:1.5rem}.w-72{width:18rem}.w-full{width:100%}.max-w-\[85vw\]{max-width:85vw}.flex-1{flex:1 1 0%}.flex-shrink-0{flex-shrink:0}.flex-grow{flex-grow:1}.-translate-x-1\/2{--tw-translate-x:-50%;transform:translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.-translate-y-1\/2{--tw-translate-y:-50%;transform:translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.cursor-pointer{cursor:pointer}.select-none{-webkit-user-select:none;user-select:none}.flex-col{flex-direction:column}.items-center{align-items:center}.justify-end{justify-content:flex-end}.justify-center{justify-content:center}.justify-between{justify-content:space-between}.gap-4{gap:1rem}.space-x-1 > :not([hidden]) ~ :not([hidden]){--tw-space-x-reverse:0;margin-right:calc(0.25rem * var(--tw-space-x-reverse));margin-left:calc(0.25rem * calc(1 - var(--tw-space-x-reverse)))}.space-x-2 > :not([hidden]) ~ :not([hidden]){--tw-space-x-reverse:0;margin-right:calc(0.5rem * var(--tw-space-x-reverse));margin-left:calc(0.5rem * calc(1 - var(--tw-space-x-reverse)))}.space-x-6 > :not([hidden]) ~ :not([hidden]){--tw-space-x-reverse:0;margin-right:calc(1.5rem * var(--tw-space-x-reverse));margin-left:calc(1.5rem * calc(1 - var(--tw-space-x-reverse)))}.space-y-1 > :not([hidden]) ~ :not([hidden]){--tw-space-y-reverse:0;margin-top:calc(0.25rem * calc(1 - var(--tw-space-y-reverse)));margin-bottom:calc(0.25rem * var(--tw-space-y-reverse))}.space-y-2 > :not([hidden]) ~ :not([hidden]){--tw-space-y-reverse:0;margin-top:calc(0.5rem * calc(1 - var(--tw-space-y-reverse)));margin-bottom:calc(0.5rem * var(--tw-space-y-reverse))}.overflow-y-auto{overflow-y:auto}.rounded-\[0\.4rem\]{border-radius:0.4rem}.rounded-full{border-radius:9999px}.rounded-lg{border-radius:0.5rem}.border-l{border-left-width:1px}.border-gray-700{--tw-border-opacity:1;border-color:rgb(55 65 81 / var(--tw-border-opacity, 1))}.bg-black\/50{background-color:rgb(0 0 0 / 0.5)}.bg-black\/80{background-color:rgb(0 0 0 / 0.8)}.bg-red-800{--tw-bg-opacity:1;background-color:rgb(153 27 27 / var(--tw-bg-opacity, 1))}.bg-white\/30{background-color:rgb(255 255 255 / 0.3)}.bg-white\/50{background-color:rgb(255 255 255 / 0.5)}.bg-gradient-to-t{background-image:linear-gradient(to top, var(--tw-gradient-stops))}.from-black\/70{--tw-gradient-from:rgb(0 0 0 / 0.7) var(--tw-gradient-from-position);--tw-gradient-to:rgb(0 0 0 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from), var(--tw-gradient-to)}.to-transparent{--tw-gradient-to:transparent var(--tw-gradient-to-position)}.object-contain{object-fit:contain}.p-3{padding:0.75rem}.p-4{padding:1rem}.px-6{padding-left:1.5rem;padding-right:1.5rem}.pb-1{padding-bottom:0.25rem}.pl-2{padding-left:0.5rem}.pr-2{padding-right:0.5rem}.text-center{text-align:center}.text-end{text-align:end}.text-sm{font-size:0.875rem;line-height:1.25rem}.text-xs{font-size:0.75rem;line-height:1rem}.font-medium{font-weight:500}.leading-tight{line-height:1.25}.text-gray-200{--tw-text-opacity:1;color:rgb(229 231 235 / var(--tw-text-opacity, 1))}.text-gray-400{--tw-text-opacity:1;color:rgb(156 163 175 / var(--tw-text-opacity, 1))}.text-white{--tw-text-opacity:1;color:rgb(255 255 255 / var(--tw-text-opacity, 1))}.opacity-100{opacity:1}.opacity-0{opacity:0}.shadow-2xl{--tw-shadow:0 25px 50px -12px rgb(0 0 0 / 0.25);--tw-shadow-colored:0 25px 50px -12px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow)}.shadow-lg{--tw-shadow:0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);--tw-shadow-colored:0 10px 15px -3px var(--tw-shadow-color), 0 4px 6px -4px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow)}.shadow-xl{--tw-shadow:0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);--tw-shadow-colored:0 20px 25px -5px var(--tw-shadow-color), 0 8px 10px -6px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow)}.transition-all{transition-property:all;transition-timing-function:cubic-bezier(0.4, 0, 0.2, 1);transition-duration:150ms}.transition-opacity{transition-property:opacity;transition-timing-function:cubic-bezier(0.4, 0, 0.2, 1);transition-duration:150ms}.transition-transform{transition-property:transform;transition-timing-function:cubic-bezier(0.4, 0, 0.2, 1);transition-duration:150ms}.duration-100{transition-duration:100ms}.duration-150{transition-duration:150ms}.duration-200{transition-duration:200ms}.duration-500{transition-duration:500ms}.hover\:opacity-80:hover{opacity:0.8}.focus\:outline-none:focus{outline:2px solid transparent;outline-offset:2px}@media (min-width: 768px){.md\:h-14{height:3.5rem}.md\:h-16{height:4rem}.md\:h-9{height:2.25rem}.md\:h-full{height:100%}.md\:w-12{width:3rem}.md\:w-14{width:3.5rem}.md\:w-16{width:4rem}.md\:w-9{width:2.25rem}.md\:w-\[450px\]{width:450px}.md\:w-full{width:100%}.md\:space-x-2 > :not([hidden]) ~ :not([hidden]){--tw-space-x-reverse:0;margin-right:calc(0.5rem * var(--tw-space-x-reverse));margin-left:calc(0.5rem * calc(1 - var(--tw-space-x-reverse)))}.md\:space-x-4 > :not([hidden]) ~ :not([hidden]){--tw-space-x-reverse:0;margin-right:calc(1rem * var(--tw-space-x-reverse));margin-left:calc(1rem * calc(1 - var(--tw-space-x-reverse)))}.md\:space-y-3 > :not([hidden]) ~ :not([hidden]){--tw-space-y-reverse:0;margin-top:calc(0.75rem * calc(1 - var(--tw-space-y-reverse)));margin-bottom:calc(0.75rem * var(--tw-space-y-reverse))}.md\:p-4{padding:1rem}.md\:text-sm{font-size:0.875rem;line-height:1.25rem}}</style><style type="text/css">.eruda-search-highlight-block{display:inline}.eruda-search-highlight-block .eruda-keyword{background:#332a00;color:#ffcb6b}</style><style type="text/css">@font-face{font-family:eruda-icon;src:url('data:application/x-font-woff;charset=utf-8;base64,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') format('woff')}[class*=' eruda-icon-'],[class^='eruda-icon-']{display:inline-block;font-family:eruda-icon!important;font-size:16px;font-style:normal;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}.eruda-icon-arrow-left:before{content:'\f101'}.eruda-icon-arrow-right:before{content:'\f102'}.eruda-icon-caret-down:before{content:'\f103'}.eruda-icon-caret-right:before{content:'\f104'}.eruda-icon-clear:before{content:'\f105'}.eruda-icon-compress:before{content:'\f106'}.eruda-icon-copy:before{content:'\f107'}.eruda-icon-delete:before{content:'\f108'}.eruda-icon-error:before{content:'\f109'}.eruda-icon-expand:before{content:'\f10a'}.eruda-icon-eye:before{content:'\f10b'}.eruda-icon-filter:before{content:'\f10c'}.eruda-icon-play:before{content:'\f10d'}.eruda-icon-record:before{content:'\f10e'}.eruda-icon-refresh:before{content:'\f10f'}.eruda-icon-reset:before{content:'\f110'}.eruda-icon-search:before{content:'\f111'}.eruda-icon-select:before{content:'\f112'}.eruda-icon-tool:before{content:'\f113'}.eruda-icon-warn:before{content:'\f114'}@font-face{font-family:luna-console-icon;src:url('data:application/x-font-woff;charset=utf-8;base64,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') format('woff')}[class*=' luna-console-icon-'],[class^=luna-console-icon-]{display:inline-block;font-family:luna-console-icon!important;font-size:16px;font-style:normal;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}.luna-console-icon-caret-down:before{content:'\f101'}.luna-console-icon-caret-right:before{content:'\f102'}.luna-console-icon-warn:before{content:'\f103'}.luna-console-icon-error:before{content:'\f104'}.luna-console-icon-input:before{content:'\f105'}.luna-console-icon-output:before{content:'\f106'}.luna-console{background:#fff;overflow-y:auto;-webkit-overflow-scrolling:touch;height:100%;position:relative;will-change:scroll-position;cursor:default;font-size:12px;font-family:ui-monospace,SFMono-Regular,SF Mono,Menlo,Consolas,Liberation Mono,monospace}.luna-console.luna-console-theme-dark{background-color:#141414}.luna-console-hidden{display:none}.luna-console-fake-logs{position:absolute;left:0;top:0;pointer-events:none;visibility:hidden;width:100%}.luna-console-logs{padding-top:1px;position:absolute;width:100%}.luna-console-log-container{box-sizing:content-box}.luna-console-log-container.luna-console-selected .luna-console-log-item{background:#ecf1f8}.luna-console-log-container.luna-console-selected .luna-console-log-item:not(.luna-console-error):not(.luna-console-warn){border-color:#ccdef5}.luna-console-header{white-space:nowrap;display:flex;font-size:11px;color:#545454;border-top:1px solid transparent;border-bottom:1px solid #ccc}.luna-console-header .luna-console-time-from-container{overflow-x:auto;-webkit-overflow-scrolling:touch;padding:3px 10px}.luna-console-nesting-level{width:14px;flex-shrink:0;margin-top:-1px;margin-bottom:-1px;position:relative;border-right:1px solid #ccc}.luna-console-nesting-level.luna-console-group-closed::before{content:""}.luna-console-nesting-level::before{border-bottom:1px solid #ccc;position:absolute;top:0;left:0;margin-left:100%;width:5px;height:100%;box-sizing:border-box}.luna-console-log-item{position:relative;display:flex;border-top:1px solid transparent;border-bottom:1px solid #ccc;margin-top:-1px;color:#333}.luna-console-log-item:after{content:"";display:block;clear:both}.luna-console-log-item .luna-console-code{display:inline;font-family:ui-monospace,SFMono-Regular,SF Mono,Menlo,Consolas,Liberation Mono,monospace}.luna-console-log-item .luna-console-code .luna-console-keyword{color:#881280}.luna-console-log-item .luna-console-code .luna-console-number{color:#1c00cf}.luna-console-log-item .luna-console-code .luna-console-operator{color:gray}.luna-console-log-item .luna-console-code .luna-console-comment{color:#236e25}.luna-console-log-item .luna-console-code .luna-console-string{color:#1a1aa6}.luna-console-log-item a{color:#15c!important}.luna-console-log-item .luna-console-icon-container{margin:0 -6px 0 10px}.luna-console-log-item .luna-console-icon-container .luna-console-icon{line-height:20px;font-size:12px;color:#333;position:relative}.luna-console-log-item .luna-console-icon-container .luna-console-icon-caret-down,.luna-console-log-item .luna-console-icon-container .luna-console-icon-caret-right{top:0;left:-2px}.luna-console-log-item .luna-console-icon-container .luna-console-icon-error{top:0;color:#ef3842}.luna-console-log-item .luna-console-icon-container .luna-console-icon-warn{top:0;color:#e8a400}.luna-console-log-item .luna-console-count{background:#8097bd;color:#fff;padding:2px 4px;border-radius:10px;font-size:12px;float:left;margin:1px -6px 0 10px}.luna-console-log-item .luna-console-log-content-wrapper{flex:1;overflow:hidden}.luna-console-log-item .luna-console-log-content{padding:3px 0;margin:0 10px;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:pre-wrap;-webkit-user-select:text;-moz-user-select:text;-ms-user-select:text;user-select:text}.luna-console-log-item .luna-console-log-content *{-webkit-user-select:text;-moz-user-select:text;-ms-user-select:text;user-select:text}.luna-console-log-item .luna-console-log-content>*{vertical-align:top}.luna-console-log-item .luna-console-log-content .luna-console-null,.luna-console-log-item .luna-console-log-content .luna-console-undefined{color:#5e5e5e}.luna-console-log-item .luna-console-log-content .luna-console-number{color:#1c00cf}.luna-console-log-item .luna-console-log-content .luna-console-boolean{color:#0d22aa}.luna-console-log-item .luna-console-log-content .luna-console-regexp,.luna-console-log-item .luna-console-log-content .luna-console-symbol{color:#881391}.luna-console-log-item .luna-console-log-content .luna-console-data-grid,.luna-console-log-item .luna-console-log-content .luna-console-dom-viewer{white-space:initial}.luna-console-log-item.luna-console-error{z-index:50;background:#fff0f0;color:red;border-top:1px solid #ffd6d6;border-bottom:1px solid #ffd6d6}.luna-console-log-item.luna-console-error .luna-console-stack{padding-left:1.2em;white-space:nowrap}.luna-console-log-item.luna-console-error .luna-console-count{background:red}.luna-console-log-item.luna-console-debug{z-index:20}.luna-console-log-item.luna-console-input{border-bottom-color:transparent}.luna-console-log-item.luna-console-warn{z-index:40;color:#5c5c00;background:#fffbe5;border-top:1px solid #fff5c2;border-bottom:1px solid #fff5c2}.luna-console-log-item.luna-console-warn .luna-console-count{background:#e8a400}.luna-console-log-item.luna-console-info{z-index:30}.luna-console-log-item.luna-console-group,.luna-console-log-item.luna-console-groupCollapsed{font-weight:700}.luna-console-preview{display:inline-block}.luna-console-preview .luna-console-preview-container{display:flex;align-items:center}.luna-console-preview .luna-console-json{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-left:12px}.luna-console-preview .luna-console-preview-icon-container{display:block}.luna-console-preview .luna-console-preview-icon-container .luna-console-icon{position:relative;font-size:12px}.luna-console-preview .luna-console-preview-icon-container .luna-console-icon-caret-down{top:2px}.luna-console-preview .luna-console-preview-icon-container .luna-console-icon-caret-right{top:1px}.luna-console-preview .luna-console-preview-content-container{word-break:break-all}.luna-console-preview .luna-console-descriptor,.luna-console-preview .luna-console-object-preview{font-style:italic}.luna-console-preview .luna-console-key{color:#881391}.luna-console-preview .luna-console-number{color:#1c00cf}.luna-console-preview .luna-console-null{color:#5e5e5e}.luna-console-preview .luna-console-string{color:#c41a16}.luna-console-preview .luna-console-boolean{color:#0d22aa}.luna-console-preview .luna-console-special{color:#5e5e5e}.luna-console-theme-dark{color-scheme:dark}.luna-console-theme-dark .luna-console-log-container.luna-console-selected .luna-console-log-item{background:#29323d}.luna-console-theme-dark .luna-console-log-container.luna-console-selected .luna-console-log-item:not(.luna-console-error):not(.luna-console-warn){border-color:#4173b4}.luna-console-theme-dark .luna-console-log-item{color:#a5a5a5;border-bottom-color:#3d3d3d}.luna-console-theme-dark .luna-console-log-item .luna-console-code .luna-console-keyword{color:#e36eec}.luna-console-theme-dark .luna-console-log-item .luna-console-code .luna-console-number{color:#9980ff}.luna-console-theme-dark .luna-console-log-item .luna-console-code .luna-console-operator{color:#7f7f7f}.luna-console-theme-dark .luna-console-log-item .luna-console-code .luna-console-comment{color:#747474}.luna-console-theme-dark .luna-console-log-item .luna-console-code .luna-console-string{color:#f29766}.luna-console-theme-dark .luna-console-log-item.luna-console-error{background:#290000;color:#ff8080;border-top-color:#5c0000;border-bottom-color:#5c0000}.luna-console-theme-dark .luna-console-log-item.luna-console-error .luna-console-count{background:#ff8080}.luna-console-theme-dark .luna-console-log-item.luna-console-warn{color:#ffcb6b;background:#332a00;border-top-color:#650;border-bottom-color:#650}.luna-console-theme-dark .luna-console-log-item .luna-console-count{background:#42597f;color:#949494}.luna-console-theme-dark .luna-console-log-item .luna-console-log-content .luna-console-null,.luna-console-theme-dark .luna-console-log-item .luna-console-log-content .luna-console-undefined{color:#7f7f7f}.luna-console-theme-dark .luna-console-log-item .luna-console-log-content .luna-console-boolean,.luna-console-theme-dark .luna-console-log-item .luna-console-log-content .luna-console-number{color:#9980ff}.luna-console-theme-dark .luna-console-log-item .luna-console-log-content .luna-console-regexp,.luna-console-theme-dark .luna-console-log-item .luna-console-log-content .luna-console-symbol{color:#e36eec}.luna-console-theme-dark .luna-console-icon-container .luna-console-icon-caret-down,.luna-console-theme-dark .luna-console-icon-container .luna-console-icon-caret-right{color:#9aa0a6}.luna-console-theme-dark .luna-console-header{border-bottom-color:#3d3d3d}.luna-console-theme-dark .luna-console-nesting-level{border-right-color:#3d3d3d}.luna-console-theme-dark .luna-console-nesting-level::before{border-bottom-color:#3d3d3d}.luna-console-theme-dark .luna-console-preview .luna-console-key{color:#e36eec}.luna-console-theme-dark .luna-console-preview .luna-console-number{color:#9980ff}.luna-console-theme-dark .luna-console-preview .luna-console-null{color:#7f7f7f}.luna-console-theme-dark .luna-console-preview .luna-console-string{color:#f29766}.luna-console-theme-dark .luna-console-preview .luna-console-boolean{color:#9980ff}.luna-console-theme-dark .luna-console-preview .luna-console-special{color:#7f7f7f}@font-face{font-family:luna-object-viewer-icon;src:url('data:application/x-font-woff;charset=utf-8;base64,d09GRgABAAAAAAS8AAsAAAAAB7QAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAABHU1VCAAABCAAAAGEAAACMISgl+k9TLzIAAAFsAAAAPQAAAFZLxUkWY21hcAAAAawAAADWAAACdBU42qdnbHlmAAAChAAAAC4AAAAwabU7V2hlYWQAAAK0AAAALwAAADZzjr4faGhlYQAAAuQAAAAYAAAAJAFyANlobXR4AAAC/AAAABAAAABAAZAAAGxvY2EAAAMMAAAAEAAAACIAtACobWF4cAAAAxwAAAAfAAAAIAEbAA9uYW1lAAADPAAAASkAAAIWm5e+CnBvc3QAAARoAAAAUwAAAHZW8MNZeJxNjTsOQFAQRc/z/+sV1mABohKV0gZeJRJR2X9cT4RJZu7nFIMBMjoGvHGaF6rdngcNAc/c/O/Nvq2W5E1igdNE2zv1iGh1c5FQPlYXUlJRyxt9+/pUKadQa/AveGEGZQAAAHicY2BkkGScwMDKwMBQx9ADJGWgdAIDJ4MxAwMTAyszA1YQkOaawnCAQfcjE8MJIFcITDIwMIIIAFqDCGkAAAB4nM2STQ4BQRCFv54ZP8MwFhYW4gQcShBsSERi50BWDuFCcwJedddKRGKnOt8k9aanqudVAy0gF3NRQLgTsLhJDVHP6UW94Kp8zEhKwYIlG/YcOXHm0mTPp96aumLLwdUQ1fcIqmJrwpSZL+iqak5JmyE1Ayr1bdGhr/2ZPmp/qPQtuj/uJzqQl+pfDyypesQD6AT/ElV8PjyrMccT9rdLR3PUFBI227VTio1jbm6dodg5VnPvmAsHxzofHfmi+Sbs/pwdWcXFkWdNSNg9arIE2QufuSCyAAB4nGNgZACBlQzTGZgYGMyVxVc2O073AIpAxHsYloHFRc2dPZY2OTIwAACmEQesAAB4nGNgZGBgAOINe2b6x/PbfGXgZjgBFIjifLyvAUEDwUqGZUCSg4EJxAEAUn4LLAB4nGNgZGBgOMHAACdXMjAyoAIBADizAkx4nGNgAIITUEwGAABZUAGReJxjYAACHgYJ3BAAE94BXXicY2BkYGAQYGBmANEMDExAzAWEDAz/wXwGAApcASsAeJxlkD1uwkAUhMdgSAJSghQpKbNVCiKZn5IDQE9Bl8KYtTGyvdZ6QaLLCXKEHCGniHKCHChj82hgLT9/M2/e7soABviFh3p5uG1qvVq4oTpxm/Qg7JOfhTvo40W4S38o3MMbpsJ9POKdO3j+HZ0BSuEW7vEh3Kb/KeyTv4Q7eMK3cJf+j3APK/wJ9/HqDdPIFLEp3FIn+yy0Z3n+rrStUlOoSTA+WwtdaBs6vVHro6oOydS5WMXW5GrOrs4yo0prdjpywda5cjYaxeIHkcmRIoJBgbipDktoJNgjQwh71b3UK6YtKvq1VpggwPgqtWCqaJIhlcaGyTWOrBUOPG1K1zGt+FrO5KS5zGreJCMr/u+6t6MT0Q+wbaZKzDDiE1/kg+YO+T89EV6oAAAAeJxdxjkOgCAUANE/uOOGB+FQBIjaaEJIuL6FsfE1M6Lk9fXPoKioaWjp6BnQjEzMLKwYNtHepZhtuMs1vpvO/ch4HIlIxhK4KVyc7BwiD8nvDlkA') format('woff')}[class*=' luna-object-viewer-icon-'],[class^=luna-object-viewer-icon-]{display:inline-block;font-family:luna-object-viewer-icon!important;font-size:16px;font-style:normal;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}.luna-object-viewer-icon-caret-down:before{content:'\f101'}.luna-object-viewer-icon-caret-right:before{content:'\f102'}.luna-object-viewer{overflow-x:auto;-webkit-overflow-scrolling:touch;overflow-y:hidden;cursor:default;font-family:ui-monospace,SFMono-Regular,SF Mono,Menlo,Consolas,Liberation Mono,monospace;font-size:12px;line-height:1.2;min-height:100%;color:#333;list-style:none!important}.luna-object-viewer ul{list-style:none!important;padding:0!important;padding-left:12px!important;margin:0!important}.luna-object-viewer li{position:relative;white-space:nowrap;line-height:16px;min-height:16px}.luna-object-viewer>li>.luna-object-viewer-key{display:none}.luna-object-viewer span{position:static!important}.luna-object-viewer li .luna-object-viewer-collapsed~.luna-object-viewer-close:before{color:#999}.luna-object-viewer-array .luna-object-viewer-object .luna-object-viewer-key{display:inline}.luna-object-viewer-null{color:#5e5e5e}.luna-object-viewer-regexp,.luna-object-viewer-string{color:#c41a16}.luna-object-viewer-number{color:#1c00cf}.luna-object-viewer-boolean{color:#0d22aa}.luna-object-viewer-special{color:#5e5e5e}.luna-object-viewer-key,.luna-object-viewer-key-lighter{color:#881391}.luna-object-viewer-key-lighter{opacity:.6}.luna-object-viewer-key-special{color:#5e5e5e}.luna-object-viewer-collapsed .luna-object-viewer-icon,.luna-object-viewer-expanded .luna-object-viewer-icon{position:absolute!important;left:-12px;color:#727272;font-size:12px}.luna-object-viewer-icon-caret-right{top:0}.luna-object-viewer-icon-caret-down{top:1px}.luna-object-viewer-expanded>.luna-object-viewer-icon-caret-down{display:inline}.luna-object-viewer-expanded>.luna-object-viewer-icon-caret-right{display:none}.luna-object-viewer-collapsed>.luna-object-viewer-icon-caret-down{display:none}.luna-object-viewer-collapsed>.luna-object-viewer-icon-caret-right{display:inline}.luna-object-viewer-hidden~ul{display:none}.luna-object-viewer-theme-dark{color:#fff}.luna-object-viewer-theme-dark .luna-object-viewer-null,.luna-object-viewer-theme-dark .luna-object-viewer-special{color:#a1a1a1}.luna-object-viewer-theme-dark .luna-object-viewer-regexp,.luna-object-viewer-theme-dark .luna-object-viewer-string{color:#f28b54}.luna-object-viewer-theme-dark .luna-object-viewer-boolean,.luna-object-viewer-theme-dark .luna-object-viewer-number{color:#9980ff}.luna-object-viewer-theme-dark .luna-object-viewer-key,.luna-object-viewer-theme-dark .luna-object-viewer-key-lighter{color:#5db0d7}@font-face{font-family:luna-dom-viewer-icon;src:url('data:application/x-font-woff;charset=utf-8;base64,d09GRgABAAAAAAS8AAsAAAAAB7QAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAABHU1VCAAABCAAAAGEAAACMISgl+k9TLzIAAAFsAAAAPQAAAFZLxUkWY21hcAAAAawAAADWAAACdBU42qdnbHlmAAAChAAAAC4AAAAwabU7V2hlYWQAAAK0AAAALwAAADZzjr4faGhlYQAAAuQAAAAYAAAAJAFyANlobXR4AAAC/AAAABAAAABAAZAAAGxvY2EAAAMMAAAAEAAAACIAtACobWF4cAAAAxwAAAAfAAAAIAEbAA9uYW1lAAADPAAAASkAAAIWm5e+CnBvc3QAAARoAAAAUwAAAHZW8MNZeJxNjTsOQFAQRc/z/+sV1mABohKV0gZeJRJR2X9cT4RJZu7nFIMBMjoGvHGaF6rdngcNAc/c/O/Nvq2W5E1igdNE2zv1iGh1c5FQPlYXUlJRyxt9+/pUKadQa/AveGEGZQAAAHicY2BkkGScwMDKwMBQx9ADJGWgdAIDJ4MxAwMTAyszA1YQkOaawnCAQfcjE8MJIFcITDIwMIIIAFqDCGkAAAB4nM2STQ4BQRCFv54ZP8MwFhYW4gQcShBsSERi50BWDuFCcwJedddKRGKnOt8k9aanqudVAy0gF3NRQLgTsLhJDVHP6UW94Kp8zEhKwYIlG/YcOXHm0mTPp96aumLLwdUQ1fcIqmJrwpSZL+iqak5JmyE1Ayr1bdGhr/2ZPmp/qPQtuj/uJzqQl+pfDyypesQD6AT/ElV8PjyrMccT9rdLR3PUFBI227VTio1jbm6dodg5VnPvmAsHxzofHfmi+Sbs/pwdWcXFkWdNSNg9arIE2QufuSCyAAB4nGNgZACBlQzTGZgYGMyVxVc2O073AIpAxHsYloHFRc2dPZY2OTIwAACmEQesAAB4nGNgZGBgAOINe2b6x/PbfGXgZjgBFIjifLyvAUEDwUqGZUCSg4EJxAEAUn4LLAB4nGNgZGBgOMHAACdXMjAyoAIBADizAkx4nGNgAIITUEwGAABZUAGReJxjYAACHgYJ3BAAE94BXXicY2BkYGAQYGBmANEMDExAzAWEDAz/wXwGAApcASsAeJxlkD1uwkAUhMdgSAJSghQpKbNVCiKZn5IDQE9Bl8KYtTGyvdZ6QaLLCXKEHCGniHKCHChj82hgLT9/M2/e7soABviFh3p5uG1qvVq4oTpxm/Qg7JOfhTvo40W4S38o3MMbpsJ9POKdO3j+HZ0BSuEW7vEh3Kb/KeyTv4Q7eMK3cJf+j3APK/wJ9/HqDdPIFLEp3FIn+yy0Z3n+rrStUlOoSTA+WwtdaBs6vVHro6oOydS5WMXW5GrOrs4yo0prdjpywda5cjYaxeIHkcmRIoJBgbipDktoJNgjQwh71b3UK6YtKvq1VpggwPgqtWCqaJIhlcaGyTWOrBUOPG1K1zGt+FrO5KS5zGreJCMr/u+6t6MT0Q+wbaZKzDDiE1/kg+YO+T89EV6oAAAAeJxdxjkOgCAUANE/uOOGB+FQBIjaaEJIuL6FsfE1M6Lk9fXPoKioaWjp6BnQjEzMLKwYNtHepZhtuMs1vpvO/ch4HIlIxhK4KVyc7BwiD8nvDlkA') format('woff')}[class*=' luna-dom-viewer-icon-'],[class^=luna-dom-viewer-icon-]{display:inline-block;font-family:luna-dom-viewer-icon!important;font-size:16px;font-style:normal;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}.luna-dom-viewer-icon-caret-down:before{content:'\f101'}.luna-dom-viewer-icon-caret-right:before{content:'\f102'}.luna-dom-viewer{padding:0 0 0 12px;cursor:default;list-style:none;min-width:100%;color:rgba(0,0,0,.88);color:var(--luna-color-text,rgba(0,0,0,.88));background-color:rgba(0,0,0,0);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji";font-family:var(--luna-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji");box-sizing:border-box;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none;font-size:14px}.luna-dom-viewer .luna-dom-viewer-hidden,.luna-dom-viewer.luna-dom-viewer-hidden{display:none}.luna-dom-viewer .luna-dom-viewer-invisible,.luna-dom-viewer.luna-dom-viewer-invisible{visibility:hidden}.luna-dom-viewer *{box-sizing:border-box}.luna-dom-viewer.luna-dom-viewer-theme-dark{color-scheme:dark;color:hsla(0,0%,100%,.85);color:var(--luna-color-text-dark,rgba(255,255,255,.85));background-color:rgba(0,0,0,0)}.luna-dom-viewer{font-size:12px;font-family:ui-monospace,SFMono-Regular,SF Mono,Menlo,Consolas,Liberation Mono,monospace}.luna-dom-viewer ul{display:inline-block}.luna-dom-viewer-toggle{min-width:12px;margin-left:-12px}.luna-dom-viewer-icon-caret-down,.luna-dom-viewer-icon-caret-right{position:absolute!important;font-size:12px!important}.luna-dom-viewer-tree-item{min-width:200px;line-height:16px;min-height:16px;position:relative;z-index:10;outline:0}.luna-dom-viewer-tree-item.luna-dom-viewer-selected .luna-dom-viewer-selection,.luna-dom-viewer-tree-item:hover .luna-dom-viewer-selection{display:block}.luna-dom-viewer-tree-item .luna-dom-viewer-icon-caret-down{display:none}.luna-dom-viewer-tree-item.luna-dom-viewer-expanded .luna-dom-viewer-icon-caret-down{display:inline-block}.luna-dom-viewer-tree-item.luna-dom-viewer-expanded .luna-dom-viewer-icon-caret-right{display:none}.luna-dom-viewer-attribute-value{word-break:break-all}.luna-dom-viewer-attribute-value.luna-dom-viewer-attribute-underline{text-decoration:underline}.luna-dom-viewer-selection{position:absolute;display:none;left:-10000px;right:0;top:0;bottom:0;z-index:-1}.luna-dom-viewer-children{margin:0;overflow-x:visible;overflow-y:visible;padding-left:15px}.luna-dom-viewer-theme-light .luna-dom-viewer-icon-caret-down,.luna-dom-viewer-theme-light .luna-dom-viewer-icon-caret-right{color:#9aa0a6}.luna-dom-viewer-theme-light .luna-dom-viewer-html-tag,.luna-dom-viewer-theme-light .luna-dom-viewer-tag-name{color:#881280}.luna-dom-viewer-theme-light .luna-dom-viewer-attribute-name{color:#994500}.luna-dom-viewer-theme-light .luna-dom-viewer-attribute-value{color:#1a1aa6}.luna-dom-viewer-theme-light .luna-dom-viewer-html-comment{color:#236e25}.luna-dom-viewer-theme-light .luna-dom-viewer-tree-item:hover .luna-dom-viewer-selection{background:#e8eaed}.luna-dom-viewer-theme-light .luna-dom-viewer-tree-item.luna-dom-viewer-selected .luna-dom-viewer-selection{background:#e0e0e0}.luna-dom-viewer-theme-light .luna-dom-viewer-tree-item.luna-dom-viewer-selected:focus .luna-dom-viewer-selection{background:#cfe8fc}.luna-dom-viewer-theme-light .luna-dom-viewer-text-node{word-break:break-all}.luna-dom-viewer-theme-light .luna-dom-viewer-text-node .luna-dom-viewer-keyword{color:#881280}.luna-dom-viewer-theme-light .luna-dom-viewer-text-node .luna-dom-viewer-number{color:#1c00cf}.luna-dom-viewer-theme-light .luna-dom-viewer-text-node .luna-dom-viewer-operator{color:gray}.luna-dom-viewer-theme-light .luna-dom-viewer-text-node .luna-dom-viewer-comment{color:#236e25}.luna-dom-viewer-theme-light .luna-dom-viewer-text-node .luna-dom-viewer-string{color:#1a1aa6}.luna-dom-viewer-theme-dark{color:#e8eaed}.luna-dom-viewer-theme-dark .luna-dom-viewer-icon-caret-down,.luna-dom-viewer-theme-dark .luna-dom-viewer-icon-caret-right{color:#9aa0a6}.luna-dom-viewer-theme-dark .luna-dom-viewer-html-tag,.luna-dom-viewer-theme-dark .luna-dom-viewer-tag-name{color:#5db0d7}.luna-dom-viewer-theme-dark .luna-dom-viewer-attribute-name{color:#9bbbdc}.luna-dom-viewer-theme-dark .luna-dom-viewer-attribute-value{color:#f29766}.luna-dom-viewer-theme-dark .luna-dom-viewer-html-comment{color:#898989}.luna-dom-viewer-theme-dark .luna-dom-viewer-tree-item:hover .luna-dom-viewer-selection{background:#083c69}.luna-dom-viewer-theme-dark .luna-dom-viewer-tree-item.luna-dom-viewer-selected .luna-dom-viewer-selection{background:#454545}.luna-dom-viewer-theme-dark .luna-dom-viewer-tree-item.luna-dom-viewer-selected:focus .luna-dom-viewer-selection{background:#073d69}.luna-dom-viewer-theme-dark .luna-dom-viewer-text-node{word-break:break-all}.luna-dom-viewer-theme-dark .luna-dom-viewer-text-node .luna-dom-viewer-keyword{color:#e36eec}.luna-dom-viewer-theme-dark .luna-dom-viewer-text-node .luna-dom-viewer-number{color:#9980ff}.luna-dom-viewer-theme-dark .luna-dom-viewer-text-node .luna-dom-viewer-operator{color:#7f7f7f}.luna-dom-viewer-theme-dark .luna-dom-viewer-text-node .luna-dom-viewer-comment{color:#747474}.luna-dom-viewer-theme-dark .luna-dom-viewer-text-node .luna-dom-viewer-string{color:#f29766}@font-face{font-family:luna-text-viewer-icon;src:url('data:application/x-font-woff;charset=utf-8;base64,d09GRgABAAAAAAS0AAsAAAAAB2QAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAABHU1VCAAABCAAAAFQAAAB0INElr09TLzIAAAFcAAAAPQAAAFZL+0klY21hcAAAAZwAAACfAAACEAEewxRnbHlmAAACPAAAAIYAAACkNSDggmhlYWQAAALEAAAALgAAADZzrb4oaGhlYQAAAvQAAAAWAAAAJAGRANNobXR4AAADDAAAABAAAAAoAZAAAGxvY2EAAAMcAAAAEAAAABYBWgFIbWF4cAAAAywAAAAdAAAAIAEXADtuYW1lAAADTAAAASkAAAIWm5e+CnBvc3QAAAR4AAAAOwAAAFJIWdOleJxjYGRgYOBiMGCwY2BycfMJYeDLSSzJY5BiYGGAAJA8MpsxJzM9kYEDxgPKsYBpDiBWAdNMDGwMQkAWK1CGlYEZyGMCstiBMpxAUUYGZgDbGgXDeJxjYGTQYJzAwMrAwFDH0AMkZaB0AgMngzEDAxMDKzMDVhCQ5prCcIAh+SMTwwkgVwhMMjAwgggAY84IrgAAAHicvZFLCsMwDERHzsdJ6aL0HD1VQiDQRbIN9Axd9aI+QTpjq5Bdd5F4Bo1lybIBNAAq8iA1YB8YZG+qlvUKl6zXGBjf6MofMWHGEyu2FPb9oCxULCtHs3yy+J2urg1rtojo0HM/MKnFGabOGlbdYvdT+1N6/7drXl8e6Vajo3efHP3b7HAUvntBMy1OJKujMTeHNZMV9McpFBC+tLgY4QB4nGNgZACBEwzrGdgZGOwZxdnVDdXNPfKEGlhchO0KhZtZ3IQYmMFq1jCsZpBi0GLQY2AwNzGzZjQSk2UUYdNmVFID8UyVRUXYlNRMlVGlTM1FjU3tmZkTmVhYmFRBhHwoCyuzKgtTIjMzWJg3ZClIGMRlZQmVB7GhMixM0aGhQIsB52sTqgAAeJxjYGRgYADi2JNxkvH8Nl8ZuBlOAAWiOB/va0DQQHCCYT2Q5GBgAnEANJ0KnQAAeJxjYGRgYDjBwIBEMjKgAi4AOvoCZQAAeJxjYACCE1CMBwAAM7gBkXicY2AAAiGGIFQIABXIAqN4nGNgZGBg4GLQZ2BmAAEmMI8LSP4H8xkADjQBUwAAAHicZZA9bsJAFITHYEgCUoIUKSmzVQoimZ+SA0BPQZfCmLUxsr3WekGiywlyhBwhp4hyghwoY/NoYC0/fzNv3u7KAAb4hYd6ebhtar1auKE6cZv0IOyTn4U76ONFuEt/KNzDG6bCfTzinTt4/h2dAUrhFu7xIdym/ynsk7+EO3jCt3CX/o9wDyv8Cffx6g3TyBSxKdxSJ/sstGd5/q60rVJTqEkwPlsLXWgbOr1R66OqDsnUuVjF1uRqzq7OMqNKa3Y6csHWuXI2GsXiB5HJkSKCQYG4qQ5LaCTYI0MIe9W91CumLSr6tVaYIMD4KrVgqmiSIZXGhsk1jqwVDjxtStcxrfhazuSkucxq3iQjK/7vurejE9EPsG2mSsww4hNf5IPmDvk/PRFeqAAAAHicXcU7CsAgFEXBe4x/l/kQBAtt3X0KSZNpRk7X91/F8eAJRBKZQqUp2Og2va19MAadyWJzpBd4kgcWAA==') format('woff')}[class*=' luna-text-viewer-icon-'],[class^=luna-text-viewer-icon-]{display:inline-block;font-family:luna-text-viewer-icon!important;font-size:16px;font-style:normal;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}.luna-text-viewer-icon-check:before{content:'\f101'}.luna-text-viewer-icon-copy:before{content:'\f102'}.luna-text-viewer{color:#333;background-color:#fff;font-family:Arial,Helvetica,sans-serif;box-sizing:border-box;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none;font-size:14px;padding:0;unicode-bidi:embed;position:relative;overflow:auto;border:1px solid #ccc}.luna-text-viewer.luna-text-viewer-platform-windows{font-family:'Segoe UI',Tahoma,sans-serif}.luna-text-viewer.luna-text-viewer-platform-linux{font-family:Roboto,Ubuntu,Arial,sans-serif}.luna-text-viewer .luna-text-viewer-hidden,.luna-text-viewer.luna-text-viewer-hidden{display:none}.luna-text-viewer .luna-text-viewer-invisible,.luna-text-viewer.luna-text-viewer-invisible{visibility:hidden}.luna-text-viewer *{box-sizing:border-box}.luna-text-viewer.luna-text-viewer-theme-dark{color:#d9d9d9;border-color:#3d3d3d;background:#242424}.luna-text-viewer:hover .luna-text-viewer-copy{opacity:1}.luna-text-viewer-table{display:table}.luna-text-viewer-table .luna-text-viewer-line-number,.luna-text-viewer-table .luna-text-viewer-line-text{padding:0}.luna-text-viewer-table-row{display:table-row}.luna-text-viewer-line-number{display:table-cell;padding:0 3px 0 8px!important;text-align:right;vertical-align:top;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none;border-right:1px solid #ccc}.luna-text-viewer-line-text{display:table-cell;padding-left:4px!important;-webkit-user-select:text;-moz-user-select:text;-ms-user-select:text;user-select:text}.luna-text-viewer-copy{background:#fff;opacity:0;position:absolute;right:5px;top:5px;border:1px solid #ccc;border-radius:4px;width:25px;height:25px;text-align:center;line-height:25px;cursor:pointer;transition:opacity .3s,top .3s}.luna-text-viewer-copy .luna-text-viewer-icon-check{color:#188037}.luna-text-viewer-text{padding:4px;font-size:12px;font-family:ui-monospace,SFMono-Regular,SF Mono,Menlo,Consolas,Liberation Mono,monospace;box-sizing:border-box;white-space:pre;display:block}.luna-text-viewer-text.luna-text-viewer-line-numbers{padding:0}.luna-text-viewer-text.luna-text-viewer-wrap-long-lines{white-space:pre-wrap}.luna-text-viewer-text.luna-text-viewer-wrap-long-lines .luna-text-viewer-line-text{word-break:break-all}.luna-text-viewer-theme-dark{color-scheme:dark}.luna-text-viewer-theme-dark .luna-text-viewer-copy,.luna-text-viewer-theme-dark .luna-text-viewer-line-number{border-color:#3d3d3d}.luna-text-viewer-theme-dark .luna-text-viewer-copy .luna-text-viewer-icon-check{color:#81c995}.luna-text-viewer-theme-dark .luna-text-viewer-copy{background-color:#242424}@font-face{font-family:luna-notification-icon;src:url('data:application/x-font-woff;charset=utf-8;base64,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') format('woff')}[class*=' luna-notification-icon-'],[class^=luna-notification-icon-]{display:inline-block;font-family:luna-notification-icon!important;font-size:16px;font-style:normal;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}.luna-notification-icon-info:before{content:'\f101'}.luna-notification-icon-check:before{content:'\f102'}.luna-notification-icon-warn:before{content:'\f103'}.luna-notification-icon-error:before{content:'\f104'}.luna-notification{position:relative;padding:20px;pointer-events:none;display:flex;flex-direction:column;overflow:hidden;color:rgba(0,0,0,.88);color:var(--luna-color-text,rgba(0,0,0,.88));background-color:rgba(0,0,0,0);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji";font-family:var(--luna-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji");box-sizing:border-box;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none;font-size:14px}.luna-notification .luna-notification-hidden,.luna-notification.luna-notification-hidden{display:none}.luna-notification .luna-notification-invisible,.luna-notification.luna-notification-invisible{visibility:hidden}.luna-notification *{box-sizing:border-box}.luna-notification.luna-notification-theme-dark{color-scheme:dark;color:hsla(0,0%,100%,.85);color:var(--luna-color-text-dark,rgba(255,255,255,.85));background-color:rgba(0,0,0,0)}.luna-notification.luna-notification-full{position:fixed;top:0;left:0;width:100%;height:100%}.luna-notification-item{display:flex;border:1px solid;padding:10px 16px;align-items:center}.luna-notification-lower{margin-top:16px}.luna-notification-upper{margin-bottom:16px}.luna-notification-icon-container{margin-right:8px;color:#fff;border-radius:50%;width:16px;height:16px;text-align:center;line-height:16px}.luna-notification-icon-container.luna-notification-info .luna-notification-icon{position:relative;top:-2px;font-size:12px}.luna-notification-icon-container.luna-notification-success .luna-notification-icon{position:relative;top:-1px;font-size:12px}.luna-notification-icon-container.luna-notification-warning{position:relative;top:-2px}.luna-notification-icon-container.luna-notification-warning .luna-notification-icon{font-size:14px}.luna-notification-icon-container.luna-notification-error{position:relative;top:-1px}.luna-notification-icon-container.luna-notification-error .luna-notification-icon{font-size:14px}.luna-notification-theme-light .luna-notification-item{border-color:#d9d9d9;border-color:var(--luna-color-border,#d9d9d9);box-shadow:0 6px 16px 0 rgba(0,0,0,.08),0 3px 6px -4px rgba(0,0,0,.12),0 9px 28px 8px rgba(0,0,0,.05);box-shadow:var(--luna-box-shadow,0 6px 16px 0 rgba(0,0,0,.08),0 3px 6px -4px rgba(0,0,0,.12),0 9px 28px 8px rgba(0,0,0,.05));color:rgba(0,0,0,.88);color:var(--luna-color-text,rgba(0,0,0,.88));background-color:#fff;background-color:var(--luna-color-bg-container,#fff)}.luna-notification-theme-light .luna-notification-icon-container.luna-notification-info{background-color:#1677ff;background-color:var(--luna-color-info,#1677ff)}.luna-notification-theme-light .luna-notification-icon-container.luna-notification-success{background-color:#52c41a;background-color:var(--luna-color-success,#52c41a)}.luna-notification-theme-light .luna-notification-icon-container.luna-notification-warning{color:#faad14;color:var(--luna-color-warning,#faad14)}.luna-notification-theme-light .luna-notification-icon-container.luna-notification-error{color:#ff4d4f;color:var(--luna-color-error,#ff4d4f)}.luna-notification-theme-dark .luna-notification-item{border-color:#424242;border-color:var(--luna-color-border,#424242);box-shadow:0 6px 16px 0 rgba(0,0,0,.08),0 3px 6px -4px rgba(0,0,0,.12),0 9px 28px 8px rgba(0,0,0,.05);box-shadow:var(--luna-box-shadow,0 6px 16px 0 rgba(0,0,0,.08),0 3px 6px -4px rgba(0,0,0,.12),0 9px 28px 8px rgba(0,0,0,.05));color:hsla(0,0%,100%,.85);color:var(--luna-color-text,rgba(255,255,255,.85));background-color:#141414;background-color:var(--luna-color-bg-container,#141414)}.luna-notification-theme-dark .luna-notification-icon-container.luna-notification-info{background-color:#1668dc;background-color:var(--luna-color-info,#1668dc)}.luna-notification-theme-dark .luna-notification-icon-container.luna-notification-success{background-color:#49aa19;background-color:var(--luna-color-success,#49aa19)}.luna-notification-theme-dark .luna-notification-icon-container.luna-notification-warning{color:#d89614;color:var(--luna-color-warning,#d89614)}.luna-notification-theme-dark .luna-notification-icon-container.luna-notification-error{color:#dc4446;color:var(--luna-color-error,#dc4446)}</style></head>
@@ -1236,18 +1229,17 @@ const remainingTimeDisplay = document.getElementById('remaining-time');
    NEW: SERVER SOURCES STATE
    ------------------------------------------------------------------------- */
 let currentServer = 'default';
-let availableServers = {}; // { github: {...}, castle: {...}, modiplay: {...}, moviebox: [...] }
+let availableServers = {}; // { moviebox_original: {...}, castle: {...}, modiplay: {...} }
+let currentQualities = []; // Qualities for the current server
 let currentMediaTitle = '';
 let currentMediaId = '';
 let currentMediaType = '';
 let currentSeason = null;
 let currentEpisode = null;
+let apiSubtitles = []; // Subtitles from the API response
 
 /* -------------------------------------------------------------------------
    SEEK BAR THUMBNAIL PREVIEW (hover + drag)
-   Sprite is a fixed COLS x ROWS grid of frames. Set THUMBNAIL_SPRITE_URL
-   per-video if each title has its own sprite (assign it wherever the rest
-   of that video's metadata gets loaded, before playback starts).
    ------------------------------------------------------------------------- */
 let THUMBNAIL_SPRITE_URL = '';
 const THUMB_COLS = 10, THUMB_ROWS = 10;
@@ -1272,9 +1264,6 @@ function updateThumbnailFrame(hoverTime) {
     const scale = displayW / THUMB_FRAME_W;
     seekThumbImage.style.backgroundSize = `${THUMB_SPRITE_W * scale}px ${THUMB_SPRITE_H * scale}px`;
 
-    // Assumes the sprite's 100 frames are spread evenly across the full
-    // video duration. If your sprites use a fixed seconds-per-frame
-    // instead, replace the line below with e.g.: const interval = 5;
     const interval = video.duration / THUMB_FRAME_COUNT;
     const index = Math.min(Math.floor(hoverTime / interval), THUMB_FRAME_COUNT - 1);
     const col = index % THUMB_COLS;
@@ -1282,7 +1271,6 @@ function updateThumbnailFrame(hoverTime) {
     seekThumbImage.style.backgroundPosition = `${-col * THUMB_FRAME_W * scale}px ${-row * THUMB_FRAME_H * scale}px`;
 }
 
-// Shared by hover and drag so the tooltip behaves identically either way
 function showSeekTooltip(clientX, time) {
     const rect = seekBar.getBoundingClientRect();
     let pos = clientX - rect.left;
@@ -1334,7 +1322,7 @@ serverToggleButton.addEventListener('click', (e) => {
 
 // Close server menu when clicking outside
 document.addEventListener('click', (e) => {
-    if (!serverMenu.contains(e.target) && e.target !== serverToggleButton) {
+    if (!serverMenu.contains(e.target) && !serverToggleButton.contains(e.target)) {
         serverMenu.classList.remove('visible');
     }
 });
@@ -1350,50 +1338,39 @@ async function fetchAllSources(title, id, type, s, e) {
         const data = await res.json();
         
         availableServers = {};
+        apiSubtitles = [];
         
-        // Add the original GitHub source first
-        if (type === 'movie' && data.videoUrl) {
-            // The original GitHub source is handled separately, but we can add it here
-        }
-
         if (data.sources && Array.isArray(data.sources)) {
             data.sources.forEach(source => {
                 if (source.source === 'moviebox') {
-                    if (!availableServers['moviebox']) availableServers['moviebox'] = [];
-                    // Parse all qualities and audio tracks
                     const qualities = source.qualities || [];
-                    if (qualities.length > 0) {
-                        qualities.forEach(q => {
-                            if (q.urlWithHeaders) {
-                                availableServers['moviebox'].push({
-                                    label: `MovieBox [${q.language} ${q.resolution}p]`,
-                                    url: `https://workingg.vercel.app/api/proxy?url=${encodeURIComponent(q.urlWithHeaders)}`
-                                });
-                            }
-                        });
-                    } else if (source.urlWithHeaders) {
-                        // Fallback to the main urlWithHeaders if no qualities array
-                        availableServers['moviebox'].push({
-                            label: `MovieBox [Original]`,
-                            url: `https://workingg.vercel.app/api/proxy?url=${encodeURIComponent(source.urlWithHeaders)}`
-                        });
-                    }
+                    const audioTracks = source.audioTracks || [];
+                    if (source.subtitles) apiSubtitles = source.subtitles;
+
+                    // Extract player1 and player2
+                    const players = [source.player1, source.player2].filter(Boolean);
+                    players.forEach((player) => {
+                        const lang = player.language || 'Original';
+                        const key = `moviebox_${lang.toLowerCase().replace(/\s+/g, '_')}`;
+                        availableServers[key] = {
+                            name: `MovieBox [${lang}]`,
+                            type: 'moviebox',
+                            audioTrack: lang,
+                            qualities: qualities.filter(q => q.language === lang),
+                            subtitles: apiSubtitles
+                        };
+                    });
                 } else if (source.source === 'castle') {
                     availableServers['castle'] = {
-                        label: 'Castle',
-                        url: `https://workingg.vercel.app/api/proxy?url=${encodeURIComponent(source.videoUrl)}&mode=master`
+                        name: 'Castle',
+                        type: 'castle',
+                        url: source.videoUrl
                     };
                 } else if (source.source === 'modiplay') {
-                    let rawUrl = source.videoUrl;
-                    let finalUrl = '';
-                    if (rawUrl.startsWith('/')) {
-                        finalUrl = `https://rozgarlelo.modiplay.xyz${rawUrl}`;
-                    } else {
-                        finalUrl = rawUrl;
-                    }
                     availableServers['modiplay'] = {
-                        label: 'ModiPlay',
-                        url: finalUrl
+                        name: 'ModiPlay',
+                        type: 'modiplay',
+                        url: source.videoUrl
                     };
                 }
             });
@@ -1409,75 +1386,124 @@ async function fetchAllSources(title, id, type, s, e) {
 function updateServerMenu() {
     serverList.innerHTML = '';
     
-    const servers = [
-        { key: 'github', name: 'GitHub (Original)', icon: '📁' },
-        { key: 'castle', name: 'Castle', icon: '🏰' },
-        { key: 'modiplay', name: 'ModiPlay', icon: '▶️' }
-    ];
-    
-    let hasServers = false;
-    
-    // Add standard servers
-    servers.forEach(s => {
-        if (availableServers[s.key]) {
-            hasServers = true;
-            const div = document.createElement('div');
-            div.className = `server-option ${currentServer === s.key ? 'active' : ''}`;
-            div.innerHTML = `<span>${s.icon} ${s.name}</span><span class="check-icon">✓</span>`;
-            div.onclick = () => {
-                playServer(s.key);
-                serverMenu.classList.remove('visible');
-            };
-            serverList.appendChild(div);
-        }
-    });
+    // 1. Default Server (GitHub)
+    const defaultDiv = document.createElement('div');
+    defaultDiv.className = `server-option ${currentServer === 'default' ? 'active' : ''}`;
+    defaultDiv.innerHTML = `<span>🔄 Default (GitHub)</span><span class="check-icon">✓</span>`;
+    defaultDiv.onclick = () => {
+        playServer('default');
+        serverMenu.classList.remove('visible');
+    };
+    serverList.appendChild(defaultDiv);
 
-    // Add MovieBox options
-    if (availableServers['moviebox'] && availableServers['moviebox'].length > 0) {
-        hasServers = true;
-        const header = document.createElement('div');
-        header.style.cssText = 'color:#fff; font-size:12px; font-weight:bold; margin-top:8px; margin-bottom:4px; padding-left:12px;';
-        header.textContent = 'MovieBox';
-        serverList.appendChild(header);
-        
-        availableServers['moviebox'].forEach((opt, idx) => {
+    // 2. MovieBox Servers
+    const movieboxKeys = Object.keys(availableServers).filter(k => k.startsWith('moviebox_'));
+    if (movieboxKeys.length > 0) {
+        const groupTitle = document.createElement('div');
+        groupTitle.className = 'server-group-title';
+        groupTitle.textContent = 'MovieBox';
+        serverList.appendChild(groupTitle);
+
+        movieboxKeys.forEach(key => {
+            const s = availableServers[key];
             const div = document.createElement('div');
-            div.className = `server-option ${currentServer === 'moviebox_' + idx ? 'active' : ''}`;
-            div.innerHTML = `<span>📦 ${opt.label}</span><span class="check-icon">✓</span>`;
+            div.className = `server-option ${currentServer === key ? 'active' : ''}`;
+            div.innerHTML = `<span>📦 ${s.name}</span><span class="check-icon">✓</span>`;
             div.onclick = () => {
-                playServer('moviebox', idx);
+                playServer(key);
                 serverMenu.classList.remove('visible');
             };
             serverList.appendChild(div);
         });
     }
-    
-    if (!hasServers) {
-        serverList.innerHTML = '<div class="server-option" style="color:#b3b3b3; cursor:default;">No servers available</div>';
+
+    // 3. Castle
+    if (availableServers['castle']) {
+        const div = document.createElement('div');
+        div.className = `server-option ${currentServer === 'castle' ? 'active' : ''}`;
+        div.innerHTML = `<span>🏰 Castle</span><span class="check-icon">✓</span>`;
+        div.onclick = () => {
+            playServer('castle');
+            serverMenu.classList.remove('visible');
+        };
+        serverList.appendChild(div);
+    }
+
+    // 4. ModiPlay
+    if (availableServers['modiplay']) {
+        const div = document.createElement('div');
+        div.className = `server-option ${currentServer === 'modiplay' ? 'active' : ''}`;
+        div.innerHTML = `<span>▶️ ModiPlay</span><span class="check-icon">✓</span>`;
+        div.onclick = () => {
+            playServer('modiplay');
+            serverMenu.classList.remove('visible');
+        };
+        serverList.appendChild(div);
     }
 }
 
-function playServer(serverKey, subIndex) {
-    let url = '';
+function playServer(serverKey) {
+    currentServer = serverKey;
+    updateServerMenu();
+    currentQualities = [];
     
-    if (serverKey === 'moviebox' && subIndex !== undefined) {
-        const opt = availableServers['moviebox'][subIndex];
-        if (!opt) return;
-        url = opt.url;
-        currentServer = 'moviebox_' + subIndex;
-    } else {
-        const sourceData = availableServers[serverKey];
-        if (!sourceData) return;
-        url = sourceData.url;
-        currentServer = serverKey;
+    if (serverKey === 'default') {
+        // Play the original GitHub URL
+        if (resolvedUrl) initHlsPlayer(resolvedUrl);
+        return;
     }
     
-    if (url) {
-        updateServerMenu();
-        initHlsPlayer(url);
+    const serverData = availableServers[serverKey];
+    if (!serverData) return;
+
+    if (serverData.type === 'moviebox') {
+        currentQualities = serverData.qualities || [];
+        // Play the first quality or 1080p
+        const bestQuality = currentQualities.find(q => q.resolution === '1080') || currentQualities[0];
+        if (bestQuality) {
+            const proxyUrl = `https://workingg.vercel.app/api/proxy?url=${encodeURIComponent(bestQuality.urlWithHeaders)}`;
+            initHlsPlayer(proxyUrl);
+            // Load subtitles from API
+            loadApiSubtitles(serverData.subtitles);
+        }
+    } else if (serverData.type === 'castle') {
+        const proxyUrl = `https://workingg.vercel.app/api/proxy?url=${encodeURIComponent(serverData.url)}&mode=master`;
+        initHlsPlayer(proxyUrl);
+    } else if (serverData.type === 'modiplay') {
+        const rawUrl = serverData.url;
+        const playUrl = rawUrl.startsWith('/') ? `https://rozgarlelo.modiplay.xyz${rawUrl}` : rawUrl;
+        initHlsPlayer(playUrl);
     }
 }
 
+async function loadApiSubtitles(subs) {
+    if (!subs || !subs.length) return;
+    
+    // Clear old API subtitles
+    Array.from(video.querySelectorAll('track[data-api-subtitle]')).forEach(t => t.remove());
+    
+    for (const sub of subs) {
+        try {
+            const res = await fetch(sub.url);
+            let text = await res.text();
+            if (sub.url.endsWith('.srt')) {
+                text = srtToVtt(text);
+            }
+            const blob = new Blob([text], {type: 'text/vtt'});
+            const url = URL.createObjectURL(blob);
+            const track = document.createElement('track');
+            track.kind = 'subtitles';
+            track.label = sub.language;
+            track.srclang = sub.abbreviate || 'en';
+            track.src = url;
+            track.setAttribute('data-api-subtitle', '1');
+            video.appendChild(track);
+        } catch (e) {
+            console.warn('Failed to load API subtitle:', sub.url, e);
+        }
+    }
+    renderTracksMenu();
+}
 
 /* -------------------------------------------------------------------------
    DOUBLE-TAP SKIP + LEFT/RIGHT HINT
@@ -1553,54 +1579,33 @@ let saveProgressInterval = null;
 
 /* -------------------------------------------------------------------------
    LOCATION-BASED AUDIO AUTO-SELECTION
-   Uses Cloudflare Pages' same-origin /cdn-cgi/trace endpoint to determine
-   the visitor country, then selects the best matching HLS audio track.
    ------------------------------------------------------------------------- */
 let _userCountry = null;
 let _userCountryPromise = null;
 let _audioAutoApplied = false;
 
 const COUNTRY_AUDIO_PREFERENCES = {
-    // English-first regions
     US: ['en'], GB: ['en'], IE: ['en'], AU: ['en'], NZ: ['en'],
     CA: ['en', 'fr'], SG: ['en', 'zh'], PH: ['en', 'tl'],
     ZA: ['en'], NG: ['en'], GH: ['en'], KE: ['en'], UG: ['en'],
-
-    // India / South Asia
     IN: ['hi', 'en'], NP: ['hi', 'en'], BD: ['bn', 'hi', 'en'],
     PK: ['ur', 'hi', 'en'], LK: ['si', 'ta', 'en'],
-
-    // Spanish-speaking regions
     ES: ['es'], MX: ['es'], AR: ['es'], CL: ['es'], CO: ['es'],
     PE: ['es'], VE: ['es'], EC: ['es'], BO: ['es'], PY: ['es'],
     UY: ['es'], CR: ['es'], PA: ['es'], DO: ['es'], GT: ['es'],
     HN: ['es'], SV: ['es'], NI: ['es'], CU: ['es'],
-
-    // Portuguese
     BR: ['pt'], PT: ['pt'],
-
-    // French
     FR: ['fr'], BE: ['fr', 'nl'], LU: ['fr', 'de'],
     MC: ['fr'], CH: ['fr', 'de', 'it'],
-
-    // German / Italian
     DE: ['de'], AT: ['de'], IT: ['it'],
-
-    // East Asia
     JP: ['ja'], KR: ['ko'], CN: ['zh'], TW: ['zh'], HK: ['zh', 'en'],
     MO: ['zh', 'en'],
-
-    // Southeast Asia
     ID: ['id', 'en'], MY: ['ms', 'en'], TH: ['th', 'en'],
     VN: ['vi', 'en'], KH: ['km', 'en'], MM: ['my', 'en'],
-
-    // Middle East
     SA: ['ar'], AE: ['ar', 'en'], QA: ['ar', 'en'], KW: ['ar', 'en'],
     BH: ['ar', 'en'], OM: ['ar', 'en'], JO: ['ar', 'en'],
     IQ: ['ar', 'en'], EG: ['ar', 'en'], MA: ['ar', 'fr', 'en'],
     DZ: ['ar', 'fr', 'en'], TN: ['ar', 'fr', 'en'],
-
-    // Slavic / Eastern Europe
     RU: ['ru'], UA: ['uk', 'ru', 'en'], PL: ['pl', 'en'],
     CZ: ['cs', 'en'], SK: ['sk', 'en'], HU: ['hu', 'en'],
     RO: ['ro', 'en'], BG: ['bg', 'en'], GR: ['el', 'en'],
@@ -1645,7 +1650,6 @@ async function getUserCountry() {
 
     _userCountryPromise = (async () => {
         try {
-            // Cloudflare Pages/Workers exposes the visitor country as "loc=XX".
             const res = await fetch('https://vidout.pages.dev/cdn-cgi/trace', {
                 method: 'GET',
                 cache: 'no-store',
@@ -1677,7 +1681,6 @@ async function getUserCountry() {
 
 function getPreferredAudioLanguages(country) {
     const preferences = COUNTRY_AUDIO_PREFERENCES[country];
-    // English is the universal fallback when the country is unknown.
     return preferences && preferences.length ? preferences : ['en'];
 }
 
@@ -1707,14 +1710,11 @@ async function applyLocationBasedAudio(hls) {
             let score = -1;
 
             if (lang === normalizedPreferred) {
-                // Earlier languages in the country preference list win.
                 score = 1000 - (preferenceIndex * 100);
             } else if (name.includes(normalizedPreferred)) {
                 score = 500 - (preferenceIndex * 100);
             }
 
-            // Prefer a normal/original audio track over commentary/descriptive
-            // tracks when both have the same language.
             if (score >= 0) {
                 if (/commentary|description|descriptive|audio description|ad/i.test(name)) {
                     score -= 25;
@@ -1731,8 +1731,6 @@ async function applyLocationBasedAudio(hls) {
         });
     });
 
-    // If the preferred language is not available, keep the manifest's normal
-    // behavior but prefer English before falling back to the first track.
     if (selectedIndex === -1) {
         selectedIndex = hls.audioTracks.findIndex(track =>
             getAudioTrackLanguage(track) === 'en'
@@ -1757,16 +1755,9 @@ async function applyLocationBasedAudio(hls) {
    ------------------------------------------------------------------------- */
 const INTRODB_API = 'https://api.theintrodb.org/v3/media';
 
-/* Holds the parsed timestamp data for the current media item.
-   Shape mirrors the API response: { intro, recap, credits, preview } —
-   each an array of { start_ms, end_ms } objects (nulls possible). */
 let _introdbData = null;
-
-/* The active skip segment currently being shown to the user, or null.
-   Shape: { type: 'intro'|'recap'|'credits'|'preview', end_ms: number } */
 let _activeSkipSegment = null;
 
-/* language mapping */
 const languageCodeMap = {
     'eng':'English','en':'English','und':'Undefined',
     'hin':'Hindi','hi':'Hindi',
@@ -1842,7 +1833,6 @@ function showControls() {
     centerPlayPauseOverlay.classList.add('opacity-100','pointer-events-auto');
     document.querySelectorAll('.player-timedtext-text-container')
         .forEach(el => el.style.bottom = '14%');
-    // Hide evidence overlay when controls appear
     const evOverlay = document.getElementById('evidence-overlay');
     if (evOverlay) {
         clearTimeout(window._evTimer);
@@ -1858,7 +1848,6 @@ function hideControls() {
         centerPlayPauseOverlay.classList.add('opacity-0','pointer-events-none');
         document.querySelectorAll('.player-timedtext-text-container')
         .forEach(el => el.style.bottom = '10%');
-        // Restart evidence overlay timer if video is still paused
         if (video.paused && typeof window.showEvidenceOverlayTimer === 'function') {
             window.showEvidenceOverlayTimer();
         }
@@ -1942,8 +1931,6 @@ function startSeeking(e) {
     showControls();
     seekThumb.classList.add('scale-100');
 
-    // Keep this exact touch/mouse pointer tied to the seek bar.
-    // This prevents unrelated swipes elsewhere on the player from seeking.
     try {
         seekBar.setPointerCapture(e.pointerId);
     } catch (_) {}
@@ -2005,7 +1992,6 @@ function isInFullscreen() {
 }
 
 function toggleFullscreen() {
-    // iOS Safari: only <video> supports native fullscreen via webkitEnterFullscreen
     if (video.webkitEnterFullscreen && !document.fullscreenElement && !document.webkitFullscreenElement) {
         video.webkitEnterFullscreen();
         return;
@@ -2035,7 +2021,6 @@ function updateFullscreenIcon() {
    ------------------------------------------------------------------------- */
 function toggleAudioSubtitleMenu() {
     const hidden = audioSubtitleMenu.classList.contains('hidden');
-    // Close speed-quality menu if open
     speedQualityMenu.classList.add('hidden');
     if (hidden) {
         renderTracksMenu();
@@ -2111,32 +2096,24 @@ function renderTracksMenu() {
         });
     }
 
-    // Read all subtitle/caption tracks from video.textTracks
-    // They come from three sources: HLS (no data-* attr), GitHub (data-github), Wyzie (data-wyzie)
-    // We display them in order: HLS → GitHub → Wyzie
     const allTextTracks = video.textTracks
         ? Array.from(video.textTracks).filter(t => t.kind === 'subtitles' || t.kind === 'captions')
         : [];
 
-    // Map each textTrack to its source by cross-referencing <track> elements
     const trackElements = Array.from(video.querySelectorAll('track'));
     function getTrackSource(textTrack) {
-        // Use the native HTMLTrackElement.track reference instead of matching by
-        // label+srclang — two different sources (e.g. Wyzie + Cloudinary) can both
-        // be "English"/"en", and label/srclang matching would always resolve to
-        // whichever <track> element happens to be first in the DOM, mislabeling both.
         const el = trackElements.find(el => el.track === textTrack);
         if (!el) return 'hls';
         if (el.hasAttribute('data-urlset')) return 'urlset';
         if (el.hasAttribute('data-wyzie'))  return 'wyzie';
         if (el.hasAttribute('data-github')) return 'github';
+        if (el.hasAttribute('data-api-subtitle')) return 'api';
         return 'hls';
     }
 
     const hlsSubTracks    = (isHlsJsMode && hlsInstance) ? hlsInstance.subtitleTracks : [];
 
-    // Sort: HLS first, Urlset second, GitHub third, Wyzie fourth
-    const SOURCE_ORDER = { hls: 0, urlset: 1, github: 2, wyzie: 3 };
+    const SOURCE_ORDER = { hls: 0, urlset: 1, github: 2, api: 3, wyzie: 4 };
     const sortedTracks = allTextTracks
         .map((t, i) => ({ track: t, originalIdx: i, source: getTrackSource(t) }))
         .sort((a, b) => SOURCE_ORDER[a.source] - SOURCE_ORDER[b.source]);
@@ -2161,14 +2138,12 @@ function renderTracksMenu() {
 
     if (!sortedTracks.length) {
         if (_wyzieLoading) {
-            // Wyzie still pending and no tracks from any source yet — show spinner only
             const li = document.createElement('li');
             li.className = 'text-gray-400 flex items-center gap-2';
             li.style.cssText = 'padding: 6px 10px; font-size: 0.85em;';
             li.innerHTML = `<svg style="flex-shrink:0;animation:spin 1s linear infinite" width="13" height="13" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path opacity="0.3" d="M12 2a10 10 0 1 0 10 10" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/><path d="M12 2a10 10 0 0 1 10 10" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg> Loading subtitles…`;
             subtitleList.appendChild(li);
         } else {
-            // Wyzie done and still nothing — safe to say no subtitles
             subtitleList.innerHTML += '<li class="text-gray-400">No subtitle tracks found.</li>';
         }
     } else {
@@ -2176,7 +2151,6 @@ function renderTracksMenu() {
         sortedTracks.forEach(({ track, originalIdx, source }) => {
             const selected = track.mode === 'hidden';
 
-            // Source group label dividers removed
             if (source !== lastSource) {
                 lastSource = source;
             }
@@ -2184,7 +2158,6 @@ function renderTracksMenu() {
             const hlsIdx = hlsSubTracks.findIndex(h => h.name === track.label || h.lang === track.language);
             const isHlsManaged = source === 'hls' && hlsIdx !== -1;
 
-            // Detect if this is a Wyzie lazy (not-yet-downloaded) track
             const trackEl = Array.from(video.querySelectorAll('track[data-wyzie]'))
                 .find(el => el.track === track);
             const isLazy = trackEl && trackEl.hasAttribute('data-lazy-url');
@@ -2196,8 +2169,7 @@ function renderTracksMenu() {
             check.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M21.2928 4.29285L22.7071 5.70706L8.70706 19.7071C8.51952 19.8946 8.26517 20 7.99995 20C7.73474 20 7.48038 19.8946 7.29285 19.7071L0.292847 12.7071L1.70706 11.2928L7.99995 17.5857L21.2928 4.29285Z" fill="white"></path></svg>`;
             const label = document.createElement('span');
             const displayName = getDisplayName(track, false);
-            // [CC] = HLS or GitHub original, lazy Wyzie tracks get no suffix until loaded
-            let labelText = (source === 'hls' || source === 'github' || source === 'urlset') ? `${displayName} [CC]` : displayName;
+            let labelText = (source === 'hls' || source === 'github' || source === 'urlset' || source === 'api') ? `${displayName} [CC]` : displayName;
             label.textContent = labelText;
             li.appendChild(check);
             li.appendChild(label);
@@ -2207,14 +2179,12 @@ function renderTracksMenu() {
             li.addEventListener('click', () => handleTrackSelection('subtitle', originalIdx, isHlsManaged ? hlsIdx : -2));
             subtitleList.appendChild(li);
 
-            // Use a flag to avoid attaching duplicate listeners across re-renders
             if (!track._menuListenerAttached) {
                 track._menuListenerAttached = true;
                 track.addEventListener('change', renderTracksMenu);
             }
         });
 
-        // HLS/GitHub tracks exist but Wyzie still loading — show spinner at the bottom
         const hasWyzieTracks = sortedTracks.some(t => t.source === 'wyzie');
         if (_wyzieLoading && !hasWyzieTracks) {
             const li = document.createElement('li');
@@ -2243,7 +2213,6 @@ function handleTrackSelection(type, idx, hlsIdx) {
         ? Array.from(video.textTracks).filter(t => t.kind === 'subtitles' || t.kind === 'captions')
         : [];
 
-    // Turn off — no async needed
     if (idx === -1) {
         if (isHlsJsMode && hlsInstance) hlsInstance.subtitleTrack = -1;
         subs.forEach(t => t.mode = 'disabled');
@@ -2254,7 +2223,6 @@ function handleTrackSelection(type, idx, hlsIdx) {
         return;
     }
 
-    // Check if selected track is a lazy (not-yet-loaded) Wyzie track
     const trackElements = Array.from(video.querySelectorAll('track'));
     const targetTextTrack = subs[idx];
     const matchingEl = targetTextTrack
@@ -2265,14 +2233,11 @@ function handleTrackSelection(type, idx, hlsIdx) {
         : null;
 
     if (matchingEl) {
-        // Wyzie lazy track — disable all others first so nothing overlaps during fetch
         if (isHlsJsMode && hlsInstance) hlsInstance.subtitleTrack = -1;
         subs.forEach(t => { t.mode = 'disabled'; });
 
-        // Show a loading indicator on the menu item (keep menu open)
         const menuItems = document.querySelectorAll('#subtitle-list .track-selector');
         menuItems.forEach((li, i) => {
-            // +1 because index 0 is the "Off" item
             if (parseInt(li.dataset.index) === idx) {
                 li.style.opacity = '0.5';
                 li.style.pointerEvents = 'none';
@@ -2281,14 +2246,11 @@ function handleTrackSelection(type, idx, hlsIdx) {
             }
         });
 
-        // Fetch the SRT file now that the user has actually asked for it
         fetchAndActivateWyzieTrack(matchingEl).then(ok => {
             if (ok) {
-                // Now that the <track> has a real src, activate its textTrack
                 const freshSubs = Array.from(video.textTracks)
                     .filter(t => t.kind === 'subtitles' || t.kind === 'captions');
                 freshSubs.forEach((t, i) => { t.mode = (i === idx) ? 'hidden' : 'disabled'; });
-                // Safety check
                 const showing = freshSubs.filter(t => t.mode === 'hidden');
                 if (showing.length > 1) showing.slice(1).forEach(t => { t.mode = 'disabled'; });
             }
@@ -2297,20 +2259,17 @@ function handleTrackSelection(type, idx, hlsIdx) {
             resetInactivityTimer();
             if (window._subtitleRendererSync) window._subtitleRendererSync();
         });
-        return; // exit — async path handles the rest
+        return;
     }
 
-    // HLS-managed track
     if (hlsIdx !== undefined && hlsIdx >= 0) {
         if (isHlsJsMode && hlsInstance) hlsInstance.subtitleTrack = hlsIdx;
         subs.forEach((t, i) => { t.mode = (i === idx) ? 'hidden' : 'disabled'; });
     } else {
-        // GitHub or already-loaded Wyzie track
         if (isHlsJsMode && hlsInstance) hlsInstance.subtitleTrack = -1;
         subs.forEach((t, i) => { t.mode = (i === idx) ? 'hidden' : 'disabled'; });
     }
 
-    // Safety: ensure no two tracks are simultaneously showing
     const showingTracks = subs.filter(t => t.mode === 'hidden');
     if (showingTracks.length > 1) showingTracks.slice(1).forEach(t => { t.mode = 'disabled'; });
 
@@ -2351,16 +2310,42 @@ function renderSpeedList() {
 function renderQualityList() {
     qualityList.innerHTML = '';
 
+    // Check if we are using MovieBox with custom qualities
+    if (currentServer.startsWith('moviebox_') && currentQualities.length > 0) {
+        const sorted = [...currentQualities].sort((a, b) => parseInt(b.resolution) - parseInt(a.resolution));
+        sorted.forEach(q => {
+            const isSelected = video.src && video.src.includes(q.url); // Basic check
+            const li = document.createElement('li');
+            li.className = `track-selector cursor-pointer flex items-center gap-2 ${isSelected ? 'font-bold text-white' : 'text-gray-400'}`;
+            const check = document.createElement('span');
+            check.style.cssText = `visibility:${isSelected ? 'visible' : 'hidden'};flex-shrink:0;display:inline-flex;align-items:center;`;
+            check.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M21.2928 4.29285L22.7071 5.70706L8.70706 19.7071C8.51952 19.8946 8.26517 20 7.99995 20C7.73474 20 7.48038 19.8946 7.29285 19.7071L0.292847 12.7071L1.70706 11.2928L7.99995 17.5857L21.2928 4.29285Z" fill="white"></path></svg>`;
+            const label = document.createElement('span');
+            label.textContent = `${q.resolution}p`;
+            li.appendChild(check);
+            li.appendChild(label);
+            li.onclick = () => {
+                const proxyUrl = `https://workingg.vercel.app/api/proxy?url=${encodeURIComponent(q.urlWithHeaders)}`;
+                initHlsPlayer(proxyUrl);
+                // Update UI
+                Array.from(qualityList.children).forEach(c => c.classList.remove('font-bold', 'text-white'));
+                li.classList.add('font-bold', 'text-white');
+                li.querySelector('.check-icon').style.visibility = 'visible';
+            };
+            qualityList.appendChild(li);
+        });
+        return;
+    }
+
+    // Default HLS.js levels
     const levels = (isHlsJsMode && hlsInstance) ? hlsInstance.levels : [];
 
     if (!levels.length) {
-        qualityList.innerHTML = '<li class="text-gray-400" style="padding:6px 10px;">No quality levels found.</li>';
+        qualityList.innerHTML = '<li class="text-gray-400" style="padding:6px 10px;">Auto (Default)</li>';
         return;
     }
 
     const curLevel = isHlsJsMode ? hlsInstance.currentLevel : -1;
-
-    // Auto option
     const autoSelected = isHlsJsMode && hlsInstance.autoLevelEnabled;
     const autoLi = document.createElement('li');
     autoLi.className = `track-selector cursor-pointer flex items-center gap-2 ${autoSelected ? 'font-bold text-white' : 'text-gray-400'}`;
@@ -2378,7 +2363,6 @@ function renderQualityList() {
     });
     qualityList.appendChild(autoLi);
 
-    // Sort levels highest → lowest by height (or bandwidth fallback)
     const sorted = levels
         .map((l, i) => ({ level: l, index: i }))
         .sort((a, b) => (b.level.height || b.level.bitrate || 0) - (a.level.height || a.level.bitrate || 0));
@@ -2411,7 +2395,6 @@ function renderSpeedQualityMenu() {
 
 function toggleSpeedQualityMenu() {
     const hidden = speedQualityMenu.classList.contains('hidden');
-    // Close audio/subtitle menu if open
     audioSubtitleMenu.classList.add('hidden');
     if (hidden) {
         renderSpeedQualityMenu();
@@ -2531,9 +2514,6 @@ function postTimeUpdateToParent() {
 /* -------------------------------------------------------------------------
    INACTIVITY & GLOBAL EVENT BINDINGS
    ------------------------------------------------------------------------- */
-/* -------------------------------------------------------------------------
-   ONE-TIME UI CONTROL BINDINGS  –  called once on page load only
-   ------------------------------------------------------------------------- */
 function setupUIControls() {
     const container = videoContainer;
     ['mousemove','mousedown','touchstart','touchend'].forEach(ev => container.addEventListener(ev, resetInactivityTimer, ev.startsWith('touch') ? {passive:true} : false));
@@ -2559,8 +2539,6 @@ function setupUIControls() {
     muteButton.addEventListener('click', toggleMute);
     audioSubtitleToggle.addEventListener('click', e => { e.stopPropagation(); toggleAudioSubtitleMenu(); });
 
-    // Pointer Events unify mouse, touch and pen input.
-    // Seeking starts only when the pointer goes down on the seek bar.
     seekBar.addEventListener('pointerdown', startSeeking);
     seekBar.addEventListener('pointermove', e => {
         if (isSeeking) {
@@ -2568,7 +2546,6 @@ function setupUIControls() {
             return;
         }
 
-        // Hover preview is only relevant to mouse/trackpad pointers.
         if (e.pointerType === 'mouse' && video.duration && video.duration !== Infinity) {
             const hoverTime = calculateNewTime(e.clientX);
             showSeekTooltip(e.clientX, hoverTime);
@@ -2593,7 +2570,7 @@ function setupUIControls() {
     video.addEventListener('loadedmetadata', () => {
         updateProgress(); updateBufferProgress();
         remainingTimeDisplay.textContent = `-${formatTime(video.duration)}`;
-        drawSeekbarMarkers(); // redraw once duration is known
+        drawSeekbarMarkers();
     });
     video.addEventListener('volumechange', updateVolumeSlider);
     video.addEventListener('waiting', showLoader);
@@ -2621,7 +2598,6 @@ function setupUIControls() {
         hideLoader();
     });
 
-    // Next Episode button — only shown on TV routes, re-evaluated on each episode change
     const nextEpisodeButton = document.getElementById('next-episode-button');
     nextEpisodeButton.addEventListener('click', () => {
         const tvMatch = window.location.pathname.match(/\/tv\/(\d+)\/S(\d+)\/E(\d+)/i);
@@ -2632,7 +2608,6 @@ function setupUIControls() {
     updateNextEpisodeButtonVisibility();
     updateEpisodePanelButtonVisibility();
 
-    // Evidence overlay — show on pause, hide on play
     const evOverlay = document.getElementById('evidence-overlay');
     function showEvidenceOverlay() {
         clearTimeout(window._evTimer);
@@ -2654,8 +2629,7 @@ function setupUIControls() {
 }
 
 /* -------------------------------------------------------------------------
-   NEXT EPISODE BUTTON VISIBILITY  –  called on each episode change
-   Hides the button if the next episode key is absent from the season JSON.
+   NEXT EPISODE BUTTON VISIBILITY
    ------------------------------------------------------------------------- */
 async function updateNextEpisodeButtonVisibility() {
     const nextEpisodeButton = document.getElementById('next-episode-button');
@@ -2667,7 +2641,6 @@ async function updateNextEpisodeButtonVisibility() {
         return;
     }
 
-    // Optimistically hide while we check, so the button never briefly shows wrong
     nextEpisodeButton.classList.add('hidden');
 
     const seriesId     = tvMatch[1];
@@ -2678,21 +2651,19 @@ async function updateNextEpisodeButtonVisibility() {
         const githubJsonUrl =
             `https://raw.githubusercontent.com/Watchout2025/api/refs/heads/main/hls/tv/${seriesId}/S${seasonNumber}.json`;
         const res  = await fetch(githubJsonUrl, { cache: 'no-store' });
-        if (!res.ok) return; // Can't confirm next episode — keep hidden
+        if (!res.ok) return;
 
         const data = await res.json();
         if (data[nextEpisode]) {
             nextEpisodeButton.classList.remove('hidden');
         }
-        // Otherwise stays hidden — next episode doesn't exist in JSON
     } catch (e) {
-        // Network/parse error — keep button hidden to avoid dead clicks
         console.warn('updateNextEpisodeButtonVisibility failed:', e.message);
     }
 }
 
 /* -------------------------------------------------------------------------
-   PER-PLAYBACK SETUP  –  called each time a new stream starts
+   PER-PLAYBACK SETUP
    ------------------------------------------------------------------------- */
 function setupInactivityDetection() {
     if (!isHlsJsMode && video.audioTracks) video.audioTracks.addEventListener('change', renderTracksMenu);
@@ -2785,7 +2756,6 @@ function handleKeyboardShortcuts(e) {
                 const cur = hlsInstance.subtitleTrack;
                 const nextIdx = cur === -1 ? 0 : -1;
                 hlsInstance.subtitleTrack = nextIdx;
-                // Sync native textTracks so cues actually render
                 const subs = Array.from(video.textTracks).filter(t=>t.kind==='subtitles'||t.kind==='captions');
                 subs.forEach((t,i) => { t.mode = (nextIdx >= 0 && i === nextIdx) ? 'hidden' : 'disabled'; });
             } else if (video.textTracks) {
@@ -2814,33 +2784,25 @@ document.addEventListener('keydown', handleKeyboardShortcuts);
    ------------------------------------------------------------------------- */
 function isDirectVideoUrl(url) {
     if (url && url.startsWith('blob:')) return true;
-    // If it's a proxied URL from our new servers, check if the underlying URL is an mp4
+    
+    // Check if it's a proxied URL
+    let targetUrl = url;
     if (url.includes('workingg.vercel.app/api/proxy')) {
         try {
-            const urlParam = new URL(url).searchParams.get('url');
-            if (urlParam) {
-                const decoded = decodeURIComponent(urlParam);
-                // Check if decoded URL is an mp4 or has referer info
-                if (decoded.includes('.mp4') || decoded.includes('|')) return true;
-            }
-        } catch(e) {}
+            const urlObj = new URL(url);
+            const encodedUrl = urlObj.searchParams.get('url');
+            if (encodedUrl) targetUrl = decodeURIComponent(encodedUrl);
+        } catch (e) {}
     }
-    // If it's a ModiPlay URL, it's likely HLS, not MP4
-    if (url.includes('modiplay.xyz')) return false;
     
     try {
-        const path = new URL(url).pathname.toLowerCase();
+        const path = new URL(targetUrl).pathname.toLowerCase();
         return /\.(mp4|webm|ogg|ogv|mov|mkv|avi|flv|m4v|ts|mts|m2ts)(\?|$)/.test(path);
     } catch (e) {
-        return /\.(mp4|webm|ogg|ogv|mov|mkv|avi|flv|m4v|ts|mts|m2ts)(\?|$)/.test(url.toLowerCase());
+        return /\.(mp4|webm|ogg|ogv|mov|mkv|avi|flv|m4v|ts|mts|m2ts)(\?|$)/.test(targetUrl.toLowerCase());
     }
 }
 
-/* ---- Mirror domain fallback for direct video files ----
-   Each pair below serves the same paths on both domains. If the URL is on
-   one of these, swap to the other on error before giving up.
-   - bigf.bigo.sg <-> bigf.imostatic.com
-   - 1a-1791.com <-> hugh.cdn.rumble.cloud */
 function getMirrorUrl(originalUrl) {
     if (originalUrl.includes('bigf.bigo.sg')) return originalUrl.replace('bigf.bigo.sg', 'chat.imostatic.com');
     if (originalUrl.includes('bigf.imostatic.com')) return originalUrl.replace('bigf.imostatic.com', 'chat.imostatic.com');
@@ -2850,35 +2812,27 @@ function getMirrorUrl(originalUrl) {
 }
 
 function initHlsPlayer(url) {
-    // Flush progress for the current episode before switching.
-    // Must happen before resolvedUrl / videoStorageKey are overwritten.
     saveVideoProgress();
     if (saveProgressInterval) {
         clearInterval(saveProgressInterval);
         saveProgressInterval = null;
     }
 
-    // Tear down any existing HLS instance cleanly before starting a new one.
-    // This prevents the old instance from firing fatal error events mid-swap.
     stopProgressSaving();
     hasRestoredPosition = false;
     if (hlsInstance) {
         hlsInstance.destroy();
         hlsInstance = null;
     }
-    // Remove injected subtitle tracks from previous episode
-    Array.from(video.querySelectorAll('track[data-github], track[data-wyzie], track[data-urlset]')).forEach(t => t.remove());
+    Array.from(video.querySelectorAll('track[data-github], track[data-wyzie], track[data-urlset], track[data-api-subtitle]')).forEach(t => t.remove());
     errorMessageDiv.classList.add('hidden');
 
-    // Reset per-episode progress state so the new episode starts fresh.
     hasRestoredPosition = false;
     _audioAutoApplied = false;
 
     resolvedUrl     = url;
     videoStorageKey = generateStorageKey(url);
 
-    // Start the Cloudflare country lookup immediately so it can run in
-    // parallel with the HLS manifest request.
     getUserCountry();
 
     /* ---- Direct video file (MP4, WebM, etc.) ---- */
@@ -2889,8 +2843,6 @@ function initHlsPlayer(url) {
         let _mirrorTried = false;
 
         const onLoadedMetadata = async () => {
-            // Safari/iOS native HLS path: select the country-preferred track
-            // through the browser's native audioTracks API before autoplay.
             await getUserCountry();
 
             if (video.audioTracks && video.audioTracks.length && !_audioAutoApplied) {
@@ -2945,8 +2897,6 @@ function initHlsPlayer(url) {
         };
 
         video.addEventListener('loadedmetadata', onLoadedMetadata, {once:true});
-        // Not {once:true} — needs to stay attached in case the mirror retry
-        // also fails; removes itself on success or on final failure above.
         video.addEventListener('error', onVideoError);
 
         video.src = url;
@@ -2965,9 +2915,6 @@ function initHlsPlayer(url) {
 
         h.on(Hls.Events.MEDIA_ATTACHED, () => h.loadSource(url));
         h.on(Hls.Events.MANIFEST_PARSED, async () => {
-            // Do the location lookup and language selection before autoplay.
-            // This prevents the normal "first audio track" choice from being
-            // the final selection.
             await applyLocationBasedAudio(h);
             renderTracksMenu();
             renderQualityList();
@@ -2982,8 +2929,6 @@ function initHlsPlayer(url) {
 
             switch (data.type) {
                 case Hls.ErrorTypes.NETWORK_ERROR:
-                    // Manifest/level 404s (or similar) are not recoverable by retrying —
-                    // retrying just loops forever on a dead URL.
                     if (
                         data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR ||
                         data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT ||
@@ -3017,8 +2962,6 @@ function initHlsPlayer(url) {
 
         video.addEventListener('loadedmetadata', () => restoreVideoProgress(), {once:true});
         video.addEventListener('canplay', async () => {
-            // canplay may arrive before/alongside MANIFEST_PARSED on some
-            // versions of HLS.js, so enforce the selection once more here.
             await applyLocationBasedAudio(h);
             hideLoader();
             setupInactivityDetection();
@@ -3031,8 +2974,6 @@ function initHlsPlayer(url) {
         showLoader();
         video.src = url;
         video.addEventListener('loadedmetadata', async () => {
-            // Safari/iOS native HLS path: select the country-preferred track
-            // through the browser's native audioTracks API before autoplay.
             await getUserCountry();
 
             if (video.audioTracks && video.audioTracks.length && !_audioAutoApplied) {
@@ -3104,8 +3045,6 @@ async function playMovie(movieId) {
 
         const cleanUrl = (await res.text()).trim();
 
-        // GitHub can return HTTP 200 with an empty/whitespace-only body.
-        // Treat that exactly like a missing stream and use the fallback player.
         if (!cleanUrl) {
             showFallbackPlayer('movie', movieId);
             return;
@@ -3122,12 +3061,6 @@ async function playMovie(movieId) {
         }
 
         if (cleanUrl && (cleanUrl.includes('.m3u8') || cleanUrl.includes('http'))) {
-            // Add the original GitHub source to availableServers
-            availableServers['github'] = {
-                label: 'GitHub (Original)',
-                url: cleanUrl
-            };
-            
             initHlsPlayer(cleanUrl);
             loadSubtitlesFromUrlset(cleanUrl);
             loadSubtitlesFromGithub('movie', movieId);
@@ -3153,8 +3086,7 @@ async function playMovie(movieId) {
 }
 
 /* -------------------------------------------------------------------------
-   FULLSCREEN IFRAME  –  shared helper that replaces the whole player with a
-   full-screen iframe pointing at the given src.
+   FULLSCREEN IFRAME
    ------------------------------------------------------------------------- */
 function _renderFullscreenIframe(src) {
     hideLoader();
@@ -3173,18 +3105,14 @@ function _renderFullscreenIframe(src) {
 }
 
 /* -------------------------------------------------------------------------
-   DIRECT STREAM IFRAME  –  used when the resolved "stream URL" is actually
-   an embed page (contains a `#`), not a raw .m3u8 — load it directly in an
-   iframe instead of handing it to HLS.js.
+   DIRECT STREAM IFRAME
    ------------------------------------------------------------------------- */
 function showDirectIframe(streamUrl) {
     _renderFullscreenIframe(streamUrl);
 }
 
 /* -------------------------------------------------------------------------
-   FALLBACK PLAYER  –  used when no stream is available for this title
-   (e.g. GitHub returns 404). Replaces the whole player with a full-screen
-   iframe pointing to an external player.
+   FALLBACK PLAYER
    ------------------------------------------------------------------------- */
 function showFallbackPlayer(mediaType, ...idParts) {
     let src;
@@ -3206,10 +3134,9 @@ function showFallbackPlayer(mediaType, ...idParts) {
    ------------------------------------------------------------------------- */
 async function playEpisode(seriesId, seasonNumber, episodeNumber) {
     _revokeAllSubtitleBlobs();
-    // Keep episode panel state in sync
     _epPlayingSeason  = Number(seasonNumber);
     _epPlayingEpisode = Number(episodeNumber);
-    _epCurrentSeason  = Number(seasonNumber); // reset panel view to playing season
+    _epCurrentSeason  = Number(seasonNumber);
     if (String(seriesId) !== _epSeriesId) {
         _epSeriesId    = String(seriesId);
         _epSeasonCache = {};
@@ -3251,12 +3178,6 @@ async function playEpisode(seriesId, seasonNumber, episodeNumber) {
         }
 
         if (fileId) {
-            // Add the original GitHub source to availableServers
-            availableServers['github'] = {
-                label: 'GitHub (Original)',
-                url: fileId
-            };
-
             initHlsPlayer(fileId);
             loadSubtitlesFromUrlset(fileId);
             loadSubtitlesFromGithub('tv', seriesId, seasonNumber, episodeNumber);
@@ -3284,16 +3205,10 @@ async function playEpisode(seriesId, seasonNumber, episodeNumber) {
 
 /* -------------------------------------------------------------------------
    START  –  Route dispatcher
-             Movie:    /movie/{tmdbId}
-             TV:       /tv/{tmdbId}/S{season}/E{episode}
-             Fallback: ?url=  or hardcoded default
    ------------------------------------------------------------------------- */
 async function resolveAndPlay() {
     const path = window.location.pathname;
 
-    // TMDB movie routes:
-    //   /movie/{tmdbId}
-    //   /movie/tmdb/{tmdbId}
     const movieMatch = path.match(/\/movie\/(?:tmdb\/)?(\d+)/i);
     if (movieMatch) {
         return playMovie(movieMatch[1]);
@@ -3305,20 +3220,17 @@ async function resolveAndPlay() {
         return playEpisode(tvMatch[1], tvMatch[2], tvMatch[3]);
     }
 
-    // IMDb movie route: /movie/tt1234567
     const movieImdbMatch = path.match(/\/movie\/(tt\d+)/i);
     if (movieImdbMatch) {
         return playMovieByImdb(movieImdbMatch[1]);
     }
 
-    // IMDb TV route: /tv/tt1234567/S1/E1  (also accepts /tv/tt1234567/1/1)
     const tvImdbMatch = path.match(/\/tv\/(tt\d+)\/S(\d+)\/E(\d+)/i)
                       || path.match(/\/tv\/(tt\d+)\/(\d+)\/(\d+)/i);
     if (tvImdbMatch) {
         return playEpisodeByImdb(tvImdbMatch[1], tvImdbMatch[2], tvImdbMatch[3]);
     }
 
-    /* Fallback: ?url= query param or hardcoded default */
     const hlsUrl =
         urlParams.get('url') ||
         'https://vidmmo.com/hls/ZDBtrL1WMPQipj3EubEdG6tAKeYJ0Nt3/master.m3u8';
@@ -3337,12 +3249,10 @@ const TMDB_FALLBACK_BASE = 'https://api.cinewave.qzz.io/api/tmdb';
 async function tmdbFetch(path, options = {}) {
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
 
-    // 1. Try the primary TMDB proxy.
     try {
         const primaryUrl = `${TMDB_PRIMARY_BASE}${normalizedPath}`;
         const response = await fetch(primaryUrl, options);
 
-        // Anything except 429 is returned normally.
         if (response.status !== 429) {
             return response;
         }
@@ -3352,8 +3262,6 @@ async function tmdbFetch(path, options = {}) {
         console.warn('[TMDB] Primary API failed, switching to fallback:', error);
     }
 
-    // 2. Fallback API uses:
-    //    ?path=/movie/123&query=?append_to_response=...
     const queryIndex = normalizedPath.indexOf('?');
 
     const pathname = queryIndex === -1
@@ -3378,11 +3286,6 @@ const TMDB_PROXY = 'https://db.speedracelight.com/3';
 
 /* -------------------------------------------------------------------------
    IMDB → TMDB RESOLUTION
-   Everything downstream (playMovie/playEpisode, subtitles, intro timestamps,
-   title fetching, the GitHub HLS lookup, etc.) is keyed on TMDB ids, so an
-   IMDb id in the URL is resolved to its TMDB id first, the URL is rewritten
-   to the canonical /movie/{tmdbId} or /tv/{tmdbId}/S{s}/E{e} form, and then
-   the normal TMDB-based flow takes over.
    ------------------------------------------------------------------------- */
 async function resolveImdbToTmdbId(imdbId, mediaType) {
     try {
@@ -3433,7 +3336,6 @@ async function fetchAndSetTitle(type, id, season, episode) {
             document.getElementById('mobile-title-main').textContent = title;
             document.title = title || document.title;
 
-            // Evidence overlay
             document.getElementById('ev-title').textContent = title;
             document.getElementById('ev-season').style.display = 'none';
             document.getElementById('ev-episode').style.display = 'none';
@@ -3454,16 +3356,14 @@ async function fetchAndSetTitle(type, id, season, episode) {
             const label      = `S${season}:E${episode}`;
             const fullTitle  = [seriesName, label, epName].filter(Boolean).join(' ');
             const mobileTitle = `${label} "${epName || seriesName}"`;
-            title = seriesName; // Store just the series name for the API
+            title = seriesName;
             
             document.getElementById('title-main-text').textContent = fullTitle;
             document.getElementById('mobile-title-main').textContent = mobileTitle;
             document.title = fullTitle || document.title;
 
-            // Evidence overlay
             document.getElementById('ev-title').textContent = seriesName;
 
-            // Season label — "Limited Series" if miniseries/single season, else "Season N"
             const seasonEl = document.getElementById('ev-season');
             const seasonType = series.type || '';
             let seasonLabel = '';
@@ -3476,19 +3376,16 @@ async function fetchAndSetTitle(type, id, season, episode) {
             if (seasonLabel) { seasonEl.textContent = seasonLabel; seasonEl.style.display = 'block'; }
             else seasonEl.style.display = 'none';
 
-            // Episode title
             const epEl = document.getElementById('ev-episode');
             if (epName) { epEl.textContent = `Episode ${episode}: ${epName}`; epEl.style.display = 'block'; }
             else epEl.style.display = 'none';
 
-            // Synopsis
             const synEl = document.getElementById('ev-synopsis');
             const synopsis = ep.overview || '';
             if (synopsis) { synEl.textContent = synopsis; synEl.style.display = 'block'; }
             else synEl.style.display = 'none';
         }
     } catch (e) {
-        /* Silently ignore — title is non-critical */
         console.warn('fetchAndSetTitle failed:', e.message);
     }
     return title;
@@ -3515,14 +3412,11 @@ function langLabel(code) {
 }
 
 function srtToVtt(srt) {
-    // Convert SRT subtitle format to WebVTT format (required by HTML5 <track>)
-    // line:85% pushes cues above the controls bar, align:center keeps them centred
     let vtt = 'WEBVTT\n\n';
     const body = srt
         .replace(/\r\n/g, '\n').replace(/\r/g, '\n')
         .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2')
         .trim();
-    // Inject position cue settings on every timestamp line
     vtt += body.replace(
         /(\d{2}:\d{2}:\d{2}\.\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}\.\d{3})/g,
         '$1 line:85% position:50% align:center'
@@ -3530,7 +3424,6 @@ function srtToVtt(srt) {
     return vtt;
 }
 
-// Track blob URLs so we can revoke them when reloading
 const _subtitleBlobUrls = [];
 
 function _revokeAllSubtitleBlobs() {
@@ -3540,12 +3433,10 @@ function _revokeAllSubtitleBlobs() {
 }
 
 async function loadSubtitlesFromGithub(type, id, season, episode) {
-    // 2-letter codes derived from languageCodeMap
     const twoLetterCodes = Object.entries(languageCodeMap)
         .filter(([code]) => code.length === 2)
         .map(([code]) => code);
 
-    // Shared inject helper
     const injectTracks = (validTracks) => {
         const allBefore = Array.from(video.textTracks)
             .filter(t => t.kind === 'subtitles' || t.kind === 'captions');
@@ -3585,12 +3476,7 @@ async function loadSubtitlesFromGithub(type, id, season, episode) {
     };
 
     try {
-        // ── TV: episode endpoints → season endpoint → subtitles.json ─────────
         if (type === 'tv') {
-            // 1. Episode-specific endpoint:
-            //    sub/tv/{id}/{season}/endpoints.json
-            //    Its value already contains the complete subtitle filename stem
-            //    ending in a dot, so only the language + .srt are appended.
             try {
                 const episodeEndpoint = `${GITHUB_RAW}/sub/tv/${id}/${season}/endpoints.json`;
                 const episodeRes = await fetch(episodeEndpoint, { cache: 'no-store' });
@@ -3633,7 +3519,7 @@ async function loadSubtitlesFromGithub(type, id, season, episode) {
 
                         if (validTracks.length) {
                             scheduleInject(validTracks);
-                            return; // New endpoints.json succeeded
+                            return;
                         }
                     } else {
                         console.warn(
@@ -3645,9 +3531,6 @@ async function loadSubtitlesFromGithub(type, id, season, episode) {
                 console.warn('Episode endpoint subtitle fetch failed, trying season endpoint:', e.message);
             }
 
-            // 2. Existing season-wide endpoint fallback:
-            //    sub/tv/{id}/{season}/endpoint
-            //    Its value is a base URL, so the episode number is inserted.
             try {
                 const seasonEndpoint = `${GITHUB_RAW}/sub/tv/${id}/${season}/endpoint`;
                 const baseRes = await fetch(seasonEndpoint, { cache: 'no-store' });
@@ -3655,7 +3538,6 @@ async function loadSubtitlesFromGithub(type, id, season, episode) {
                 if (baseRes.ok) {
                     const cloudinaryBase = (await baseRes.text()).trim();
 
-                    // Fetch all language VTTs in parallel: {base}{episode}.{langCode}.vtt
                     const trackData = await Promise.all(twoLetterCodes.map(async (code) => {
                         try {
                             const url = `${cloudinaryBase}${episode}.${code}.vtt`;
@@ -3675,7 +3557,7 @@ async function loadSubtitlesFromGithub(type, id, season, episode) {
                     const validTracks = trackData.filter(Boolean);
                     if (validTracks.length) {
                         scheduleInject(validTracks);
-                        return; // Season endpoint succeeded — skip subtitles.json
+                        return;
                     }
                 }
             } catch (e) {
@@ -3683,7 +3565,6 @@ async function loadSubtitlesFromGithub(type, id, season, episode) {
             }
         }
 
-        // ── Fallback: subtitles.json (movies + TV fallback) ────────────────
         const jsonPath = type === 'movie'
             ? `${GITHUB_RAW}/sub/movie/${id}/subtitles.json`
             : `${GITHUB_RAW}/sub/tv/${id}/${season}/${episode}/subtitles.json`;
@@ -3724,20 +3605,14 @@ async function loadSubtitlesFromGithub(type, id, season, episode) {
 }
 
 /* -------------------------------------------------------------------------
-   SUBTITLES FROM WYZIE (OpenSubtitles proxy)
-   Priority order in menu: HLS → GitHub → Wyzie
-
-   LAZY LOADING: Only the Wyzie search API is called on page load to get
-   the track list. Actual SRT files are only fetched when the user clicks
-   a Wyzie subtitle. This avoids downloading 10–20 subtitle files upfront
-   and makes tracks appear in the menu immediately.
+   SUBTITLES FROM WYZIE
    ------------------------------------------------------------------------- */
 const WYZIE_API    = 'https://subs.videasy.to/search';
 const WYZIE_KEY    = 'wyzie-ea127adc7693d78810f9cf157f267ea0';
 
 async function fetchAndActivateWyzieTrack(trackEl) {
     const lazyUrl = trackEl.getAttribute('data-lazy-url');
-    if (!lazyUrl) return true; // already loaded
+    if (!lazyUrl) return true;
 
     try {
         const srtRes = await fetch(lazyUrl, { cache: 'no-store' });
@@ -3758,7 +3633,6 @@ async function fetchAndActivateWyzieTrack(trackEl) {
 
 let _wyzieLoading = false;
 
-// Fetch IMDb ID from TMDB external_ids endpoint (needed by Wyzie/OpenSubtitles)
 async function fetchImdbId(type, tmdbId) {
     try {
         const endpoint = type === 'movie'
@@ -3776,13 +3650,11 @@ async function fetchImdbId(type, tmdbId) {
 
 async function loadSubtitlesFromWyzie(type, id, season, episode) {
     _wyzieLoading = true;
-    renderTracksMenu(); // immediately show loading state in menu if already open
+    renderTracksMenu();
     try {
-        // Wyzie/OpenSubtitles requires an IMDb ID, not a TMDB ID — resolve it first
         const imdbId = await fetchImdbId(type, id);
         if (!imdbId) { _wyzieLoading = false; renderTracksMenu(); return; }
 
-        // Build query URL — metadata only, SRT files fetched lazily on selection
         let apiUrl = `${WYZIE_API}?id=${imdbId}`;
         if (type === 'tv') {
             apiUrl += `&season=${season}&episode=${episode}`;
@@ -3794,10 +3666,7 @@ async function loadSubtitlesFromWyzie(type, id, season, episode) {
         const tracks = await res.json();
         if (!Array.isArray(tracks) || !tracks.length) { _wyzieLoading = false; renderTracksMenu(); return; }
 
-        // Inject placeholder <track> elements immediately — no SRT fetch yet.
-        // The actual SRT is downloaded only when the user selects a track.
         const inject = () => {
-            // Remove previously injected Wyzie tracks before re-injecting
             Array.from(video.querySelectorAll('track[data-wyzie]')).forEach(t => t.remove());
 
             tracks.forEach((track) => {
@@ -3805,15 +3674,12 @@ async function loadSubtitlesFromWyzie(type, id, season, episode) {
                 el.kind    = 'subtitles';
                 el.label   = (track.display || track.language) + (track.isHearingImpaired ? ' [CC]' : '');
                 el.srclang = track.language;
-                // Do NOT set el.src — store the SRT URL for lazy loading on selection
                 el.setAttribute('data-wyzie', '1');
                 el.setAttribute('data-lazy-url', track.url);
                 el.default = false;
                 video.appendChild(el);
             });
 
-            // Tracks have no src so the browser won't auto-activate them,
-            // but defensively mark any that slipped through as disabled.
             Array.from(video.textTracks)
                 .filter(t => t.kind === 'subtitles' || t.kind === 'captions')
                 .forEach(t => {
@@ -3822,7 +3688,6 @@ async function loadSubtitlesFromWyzie(type, id, season, episode) {
                     if (el && el.hasAttribute('data-lazy-url')) t.mode = 'disabled';
                 });
 
-            // Re-render menu so Wyzie tracks appear immediately after GitHub tracks
             _wyzieLoading = false;
             renderTracksMenu();
         };
@@ -3839,10 +3704,9 @@ async function loadSubtitlesFromWyzie(type, id, season, episode) {
         console.warn('Wyzie subtitle load failed:', e.message);
     }
 }
+
 /* -------------------------------------------------------------------------
-   SUBTITLES FROM URLSET (AceK CDN Pattern Extraction)
-   Stream: https://{host}/{srv}/hls3/{prefix}/{folderId}/{filePrefix}_,l,n,h,.urlset/master.txt
-   Sub:    https://{srv.toLowerCase()}.acek-cdn.com/vtt/{prefix}/{folderId}/{filePrefix}{langCode}.vtt
+   SUBTITLES FROM URLSET
    ------------------------------------------------------------------------- */
 async function loadSubtitlesFromUrlset(streamUrl) {
     if (!streamUrl || !streamUrl.includes('/hls3/')) {
@@ -3853,10 +3717,6 @@ async function loadSubtitlesFromUrlset(streamUrl) {
         const parsedUrl = new URL(streamUrl);
         const pathname = parsedUrl.pathname;
 
-        // Extract: srv, prefix, folderId, filePrefix
-        // Supports two URL shapes:
-        //   old: {filePrefix}_,l,n,h,.urlset/master.txt
-        //   new: {filePrefix}_n/master.txt  (or _h/, _l/ — quality variants)
         const match = pathname.match(/\/([^\/]+)\/hls3\/([^\/]+)\/([^\/]+)\/([^\/]+)_(?:,|[nhl]\/)/);
         if (!match) return;
 
@@ -3864,16 +3724,13 @@ async function loadSubtitlesFromUrlset(streamUrl) {
 
         setThumbnailSprite(`https://pixibay.cc/${filePrefix}0000.jpg`);
 
-        // Supported CDN domains to try
         const cdnDomains = ['acek-cdn.com', 'dramiyos-cdn.com'];
 
-        // Languages to check
         const langCodes = [
             'eng', 'hin', 'spa', 'fre', 'ger', 'ita', 'por', 'rus', 
             'zho', 'ara', 'kor', 'jpn', 'tam', 'tel', 'kan', 'mal'
         ];
 
-        // Fetch tracks in parallel across supported CDNs
         const trackData = await Promise.all(langCodes.map(async (code) => {
             for (const domain of cdnDomains) {
                 try {
@@ -3928,35 +3785,16 @@ async function loadSubtitlesFromUrlset(streamUrl) {
         console.warn('[UrlsetSubtitles] Extraction failed:', err.message);
     }
 }
+
 /* =========================================================================
-   INTRODB — TIMESTAMPS  (skip intro / recap / credits / preview)
-   =========================================================================
-
-   Flow:
-     1. loadIntrodbTimestamps() is called from playMovie() / playEpisode()
-        once we know the TMDB ID (and season/episode for TV).
-     2. It waits for video duration to be available, then fires the API
-        request with duration_ms.
-     3. On success, _introdbData is stored and seekbar markers are drawn.
-     4. On every timeupdate the player checks whether currentTime falls
-        inside any segment and shows/hides the skip prompt accordingly.
+   INTRODB — TIMESTAMPS
    ========================================================================= */
-
-/**
- * Fetch timestamps for the current media item and initialise the skip UI.
- * @param {'movie'|'tv'} type
- * @param {string|number} tmdbId
- * @param {number} [season]
- * @param {number} [episode]
- */
 async function loadIntrodbTimestamps(type, tmdbId, season, episode) {
-    // Reset any previous state
     _introdbData        = null;
     _activeSkipSegment  = null;
     hideSkipPrompt();
     clearSeekbarMarkers();
 
-    // We need the duration — wait until it's available
     const getDuration = () => new Promise(resolve => {
         if (video.duration && isFinite(video.duration)) {
             resolve(video.duration);
@@ -3975,7 +3813,6 @@ async function loadIntrodbTimestamps(type, tmdbId, season, episode) {
 
     let duration;
     try {
-        // Timeout after 10 s — don't block indefinitely
         duration = await Promise.race([
             getDuration(),
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000))
@@ -3987,7 +3824,6 @@ async function loadIntrodbTimestamps(type, tmdbId, season, episode) {
 
     const durationMs = Math.round(duration * 1000);
 
-    // Build the request URL
     const params = new URLSearchParams({ tmdb_id: tmdbId, duration_ms: durationMs });
     if (type === 'tv' && season != null && episode != null) {
         params.set('season', season);
@@ -4009,8 +3845,6 @@ async function loadIntrodbTimestamps(type, tmdbId, season, episode) {
     }
 }
 
-/* ---- Seekbar marker rendering ---- */
-
 const MARKER_TYPES = ['intro', 'recap', 'credits', 'preview'];
 
 function clearSeekbarMarkers() {
@@ -4021,7 +3855,7 @@ function drawSeekbarMarkers() {
     clearSeekbarMarkers();
     if (!_introdbData || !video.duration || !isFinite(video.duration)) return;
 
-    const duration = video.duration * 1000; // ms
+    const duration = video.duration * 1000;
 
     MARKER_TYPES.forEach(type => {
         const segments = _introdbData[type];
@@ -4040,13 +3874,10 @@ function drawSeekbarMarkers() {
             marker.style.left  = `${leftPct}%`;
             marker.style.width = `${widthPct}%`;
             marker.title = type.charAt(0).toUpperCase() + type.slice(1);
-            // Insert behind progress/buffer layers
             seekBar.insertBefore(marker, seekBar.firstChild);
         });
     });
 }
-
-/* ---- Skip prompt show/hide ---- */
 
 const skipPromptEl  = document.getElementById('skip-prompt');
 const skipPromptBtn = document.getElementById('skip-prompt-btn');
@@ -4069,24 +3900,16 @@ function hideSkipPrompt() {
     skipPromptEl.classList.remove('visible');
 }
 
-/** Called by the onclick on the skip button */
 function skipPromptAction() {
     if (!_activeSkipSegment) return;
     const endSec = _activeSkipSegment.end_ms / 1000;
-    // Clamp to valid range
     video.currentTime = Math.min(endSec, video.duration - 0.1);
     hideSkipPrompt();
     resetInactivityTimer();
 }
 
-/**
- * Called on every timeupdate. Checks whether currentTime sits inside
- * any known segment and updates the skip prompt accordingly.
- * Priority: intro > recap > credits > preview (first match wins).
- */
 function checkIntrodbSegments() {
     if (!_introdbData || !video.duration || video.paused) {
-        // Hide if paused (Netflix behaviour: prompt only while playing)
         if (video.paused && _activeSkipSegment) hideSkipPrompt();
         return;
     }
@@ -4102,7 +3925,6 @@ function checkIntrodbSegments() {
             const startMs = seg.start_ms ?? 0;
             const endMs   = seg.end_ms   ?? totalMs;
             if (nowMs >= startMs && nowMs < endMs) {
-                // We're inside this segment
                 if (!_activeSkipSegment || _activeSkipSegment.type !== type) {
                     showSkipPrompt(type, endMs);
                 }
@@ -4111,14 +3933,12 @@ function checkIntrodbSegments() {
         }
     }
 
-    // Not inside any segment
     if (_activeSkipSegment) hideSkipPrompt();
 }
 
 /* =========================================================================
    END INTRODB
    ========================================================================= */
-
 
 /* -------------------------------------------------------------------------
    DRAG & DROP LOCAL VIDEO
@@ -4129,7 +3949,6 @@ function checkIntrodbSegments() {
 
     function hasVideoInTransfer(dt) {
         if (!dt) return false;
-        // During dragenter/dragover, types is available even before files are accessible
         const types = Array.from(dt.types || []);
         return types.includes('Files');
     }
@@ -4143,14 +3962,12 @@ function checkIntrodbSegments() {
     function showOverlay() { dragOverlay.style.display = 'flex'; }
     function hideOverlay() { dragOverlay.style.display = 'none'; }
 
-    // Use dragenter/dragleave on window to catch all drags reliably
     window.addEventListener('dragenter', e => {
         if (!hasVideoInTransfer(e.dataTransfer)) return;
         e.preventDefault();
         showOverlay();
     });
 
-    // Only hide when leaving the window entirely (relatedTarget is null)
     window.addEventListener('dragleave', e => {
         if (e.relatedTarget === null) hideOverlay();
     });
@@ -4169,7 +3986,6 @@ function checkIntrodbSegments() {
         if (window._localVideoBlobUrl) { URL.revokeObjectURL(window._localVideoBlobUrl); window._localVideoBlobUrl = null; }
         const blobUrl = URL.createObjectURL(videoFile);
         window._localVideoBlobUrl = blobUrl;
-        // Tag the blob URL with the original filename so initHlsPlayer can detect the type
         window._localVideoBlobName = videoFile.name;
         const iframe = document.getElementById('fallback-iframe');
         if (iframe) iframe.remove();
@@ -4186,8 +4002,6 @@ function checkIntrodbSegments() {
 
 /* =========================================================================
    NETFLIX-STYLE CUSTOM SUBTITLE RENDERER
-   - Uses mode:'hidden' so browser parses cues but never renders natively
-   - Listens to cuechange on the active track and renders into #player-timedtext
    ========================================================================= */
 (function() {
     const timedtext = document.getElementById('player-timedtext');
@@ -4202,14 +4016,12 @@ function checkIntrodbSegments() {
         timedtext.innerHTML = '';
         if (!track || !track.activeCues || track.activeCues.length === 0) return;
 
-        // Collect all active cue texts (usually just one, but handle multiples)
         const lines = [];
         for (let i = 0; i < track.activeCues.length; i++) {
             const cue = track.activeCues[i];
-            // Strip VTT tags like <b>, <i>, <c.color>, <00:00:00.000> timestamp tags
             const text = cue.text
-                .replace(/<\d{2}:\d{2}:\d{2}\.\d{3}>/g, '')  // timestamp tags
-                .replace(/<[^>]+>/g, '')                        // all other tags
+                .replace(/<\d{2}:\d{2}:\d{2}\.\d{3}>/g, '')
+                .replace(/<[^>]+>/g, '')
                 .replace(/&amp;/g, '&')
                 .replace(/&lt;/g, '<')
                 .replace(/&gt;/g, '>')
@@ -4221,11 +4033,8 @@ function checkIntrodbSegments() {
 
         const combined = lines.join('\n');
 
-        // Build exact Netflix DOM structure with inline styles
         const container = document.createElement('div');
         container.className = 'player-timedtext-text-container';
-        // Netflix-style: left is set to (position - ~10)% to visually center the block
-        // We'll insert, measure, then reposition — but set an initial estimate
         const subtitleBottom =
         bottomOverlay.classList.contains('controls-hidden')
         ? '10%'
@@ -4239,7 +4048,6 @@ function checkIntrodbSegments() {
         const inner = document.createElement('span');
         inner.style.cssText = 'font-size: 4.8vh;line-height:normal;font-weight:normal;color:#ffffff;text-shadow:#000000 0px 0px 7px;font-family:Netflix Sans,Helvetica Neue,Helvetica,Arial,sans-serif;font-weight:bolder';
 
-        // Handle newlines — render as <br>
         combined.split('\n').forEach((line, idx, arr) => {
             inner.appendChild(document.createTextNode(line));
             if (idx < arr.length - 1) inner.appendChild(document.createElement('br'));
@@ -4265,11 +4073,9 @@ function checkIntrodbSegments() {
         _activeTrack = track;
         _cueListener = () => renderCue(track);
         track.addEventListener('cuechange', _cueListener);
-        // Render any already-active cues immediately (e.g. seek into a cue)
         renderCue(track);
     }
 
-    // Watch for changes to which track is active (mode:'hidden' = active for us)
     function syncActiveTrack() {
         const video = document.getElementById('video');
         if (!video || !video.textTracks) return;
@@ -4280,29 +4086,23 @@ function checkIntrodbSegments() {
         attachTrack(active);
     }
 
-    // Poll textTracks for mode changes (fired by handleTrackSelection, keyboard, etc.)
-    // Also listen to addtrack so newly injected tracks are caught
     function initRenderer() {
         const video = document.getElementById('video');
         if (!video) return;
 
-        // Observe textTracks list changes
         video.textTracks.addEventListener('addtrack',    syncActiveTrack);
         video.textTracks.addEventListener('removetrack', syncActiveTrack);
         video.textTracks.addEventListener('change',      syncActiveTrack);
 
-        // Initial sync in case tracks already exist
         syncActiveTrack();
     }
 
-    // Wait until video element is ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initRenderer);
     } else {
         initRenderer();
     }
 
-    // Expose so handleTrackSelection can nudge the renderer after track switches
     window._subtitleRendererSync = syncActiveTrack;
 })();
 
@@ -4320,14 +4120,13 @@ const episodePanelError    = document.getElementById('episode-panel-error');
 const episodeList          = document.getElementById('episode-list');
 const episodePanelButton   = document.getElementById('episode-panel-button');
 
-/* State */
 let _epSeriesId       = null;
 let _epTotalSeasons   = 0;
-let _epPlayingSeason  = null;  // season that is actually playing
-let _epPlayingEpisode = null;  // episode that is actually playing
-let _epCurrentSeason  = null;  // season currently shown in panel (may differ when browsing)
+let _epPlayingSeason  = null;
+let _epPlayingEpisode = null;
+let _epCurrentSeason  = null;
 let _epSeriesName     = '';
-let _epSeasonCache    = {}; // season number → episode array
+let _epSeasonCache    = {};
 
 function openEpisodePanel() {
     const tvMatch = window.location.pathname.match(/\/tv\/(\d+)\/S(\d+)\/E(\d+)/i);
@@ -4337,7 +4136,6 @@ function openEpisodePanel() {
     const seasonNumber = Number(tvMatch[2]);
     const epNumber     = Number(tvMatch[3]);
 
-    // Always update playing state from current URL
     _epPlayingSeason  = seasonNumber;
     _epPlayingEpisode = epNumber;
 
@@ -4345,21 +4143,17 @@ function openEpisodePanel() {
     episodePanelBackdrop.classList.add('open');
     clearTimeout(inactivityTimer);
 
-    // Close other menus
     audioSubtitleMenu.classList.add('hidden');
     speedQualityMenu.classList.add('hidden');
 
-    // If same series — sync state and re-render (but re-fetch metadata if select not yet built)
     if (seriesId === _epSeriesId) {
-        _epCurrentSeason = seasonNumber; // reset panel view to playing season
+        _epCurrentSeason = seasonNumber;
 
-        // If the select was never populated (e.g. panel opened for first time after playEpisode set _epSeriesId)
         if (seasonSelect.options.length === 0 || (seasonSelect.options.length === 1 && seasonSelect.options[0].value === '')) {
             fetchSeriesInfo(seriesId);
             return;
         }
 
-        // Sync dropdown to playing season
         if (seasonSelect.value !== String(seasonNumber)) {
             seasonSelect.value = seasonNumber;
         }
@@ -4371,7 +4165,6 @@ function openEpisodePanel() {
         return;
     }
 
-    // New series — fetch metadata
     _epSeriesId      = seriesId;
     _epCurrentSeason = seasonNumber;
     _epTotalSeasons  = 0;
@@ -4399,7 +4192,6 @@ async function fetchSeriesInfo(seriesId) {
         _epTotalSeasons = data.number_of_seasons || 1;
         episodePanelTitle.textContent = _epSeriesName || 'Episodes';
 
-        // Build season selector dropdown (skip season 0 / specials unless only option)
         let seasons = (data.seasons || []).filter(s => s.season_number > 0);
         if (!seasons.length) {
             const total = data.number_of_seasons || 1;
@@ -4415,7 +4207,6 @@ async function fetchSeriesInfo(seriesId) {
             seasonSelect.appendChild(opt);
         });
 
-        // Ensure the select actually shows the right season (fallback if none matched)
         if (!seasonSelect.value && seasons.length) {
             seasonSelect.value = seasons[0].season_number;
             _epCurrentSeason   = Number(seasons[0].season_number);
@@ -4423,12 +4214,9 @@ async function fetchSeriesInfo(seriesId) {
 
         seasonSelect.onchange = () => {
             const chosen = Number(seasonSelect.value);
-            // Do NOT overwrite _epCurrentSeason — that tracks what's actually playing.
-            // _epLoadedSeason will be updated inside loadEpisodeSeason.
             loadEpisodeSeason(chosen);
         };
 
-        // Load the currently playing season
         loadEpisodeSeason(_epCurrentSeason);
     } catch (e) {
         console.error('[EpisodePanel] fetchSeriesInfo failed:', e);
@@ -4481,7 +4269,6 @@ function renderEpisodeList(episodes) {
         const li = document.createElement('li');
         li.className = 'episode-item' + (isActive ? ' active' : '');
 
-        // Thumbnail
         const thumbWrapper = document.createElement('div');
         thumbWrapper.className = 'episode-thumb-wrapper';
 
@@ -4496,14 +4283,12 @@ function renderEpisodeList(episodes) {
         }
         thumbWrapper.appendChild(thumbImg);
 
-        // Play overlay icon
         const playOverlay = document.createElement('div');
         playOverlay.className = 'episode-thumb-play';
         playOverlay.innerHTML = `<svg viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M5 2.7a1 1 0 0 1 1.48-.88l16.93 9.3a1 1 0 0 1 0 1.76l-16.93 9.3A1 1 0 0 1 5 21.31z"/></svg>`;
         thumbWrapper.appendChild(playOverlay);
         li.appendChild(thumbWrapper);
 
-        // Info
         const info = document.createElement('div');
         info.className = 'episode-info';
 
@@ -4540,7 +4325,6 @@ function renderEpisodeList(episodes) {
         episodeList.appendChild(li);
     });
 
-    // Scroll the active episode into view only when browsing the playing season
     if (_epLoadedSeason === _epPlayingSeason) {
         requestAnimationFrame(() => {
             const activeEl = episodeList.querySelector('.episode-item.active');
@@ -4566,7 +4350,6 @@ episodePanelButton.addEventListener('click', e => {
 episodePanelClose.addEventListener('click', closeEpisodePanel);
 episodePanelBackdrop.addEventListener('click', closeEpisodePanel);
 
-// Hide episode panel button on movie routes; show on TV
 function updateEpisodePanelButtonVisibility() {
     const isTv = /\/tv\/(?:\d+|tt\d+)\/S\d+\/E\d+/i.test(window.location.pathname)
               || /\/tv\/(?:\d+|tt\d+)\/\d+\/\d+/i.test(window.location.pathname);
@@ -4574,7 +4357,6 @@ function updateEpisodePanelButtonVisibility() {
 }
 
 window.onload = () => {
-    // Seed playing state from URL so episode panel works correctly on first open
     const tvMatch = window.location.pathname.match(/\/tv\/(\d+)\/S(\d+)\/E(\d+)/i)
                  || window.location.pathname.match(/\/tv\/(\d+)\/(\d+)\/(\d+)/);
     if (tvMatch) {
@@ -4607,13 +4389,9 @@ function closeReportModal() {
   reportModal.classList.remove('active');
 }
 
-// Close when clicking backdrop
 reportModal.addEventListener('click', (e) => {
   if (e.target === reportModal) closeReportModal();
 });
-
-
-
 
 async function submitIssue() {
   const type = issueTypeSelect.value;
@@ -4647,33 +4425,26 @@ async function submitIssue() {
 // Video Fit Toggle
 const fitModes = ['object-cover', 'object-contain', 'object-fill'];
 const fitLabels = { 'object-cover': 'Cover', 'object-contain': 'Contain', 'object-fill': 'Fill' };
-let fitIndex = 0; // starts at cover (matches current class)
+let fitIndex = 0;
 
 const fitButton = document.getElementById('fit-button');
 
 const svgClass = `class="text-white w-6 h-6 md:w-full md:h-full"`;
 function updateFitIcon(mode) {
   if (mode === 'object-cover') {
-    // Cover: outward arrows on a rectangle
     fitButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" ${svgClass} viewBox="0 0 24 16"><path fill="currentColor" d="M0 0h5v2H2v3H0zm19 0h5v5h-2V2h-3zM0 11h2v3h3v2H0zm22 3h-3v2h5v-5h-2zM1 1h22v14H1z" fill-rule="evenodd" clip-rule="evenodd"/></svg>`;
   } else if (mode === 'object-contain') {
-    // Contain: inward arrows on a rectangle
     fitButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" ${svgClass} viewBox="0 0 24 16"><path fill="currentColor" d="M0 0h5v2H2v3H0zm19 0h5v5h-2V2h-3zM0 11h2v3h3v2H0zm22 3h-3v2h5v-5h-2zM7 4h10v8H7z"/></svg>`;
   } else {
-    // Fill: solid filled rectangle
     fitButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" ${svgClass} viewBox="0 0 24 16"><rect x="0" y="0" width="24" height="16" fill="currentColor"/></svg>`;
   }
 }
 
 fitButton.addEventListener('click', () => {
-  // Remove current fit class
   video.classList.remove(fitModes[fitIndex]);
-  // Advance to next
   fitIndex = (fitIndex + 1) % fitModes.length;
   const newMode = fitModes[fitIndex];
   video.classList.add(newMode);
-
-  // Show toast
   showToast(`Fit: ${fitLabels[newMode]}`);
 });
 
