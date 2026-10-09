@@ -68,7 +68,7 @@
             #speed-button{position: relative;left: 0;}
             #bottom-controls-row{justify-content: center;}
             #left-controlbuttons{display:none;}
-            #center-controls-mobile-only{width: 50vw;justify-content:space-between!important;}
+            #center-controls-mobile-only{width: 50vw;justify-space-between!important;}
             #skip-forward-button, #skip-backward-button{display:none;}
 
             /* Mobile labeled buttons */
@@ -637,7 +637,7 @@
         <button id="skip-prompt-btn" onclick="skipPromptAction()">Skip Intro</button>
     </div>
 
-    <div id="error-message" class="absolute top-0 left-1/2 -translate-x-1/2 mt-4 p-3 bg-red-800 text-white text-sm rounded-lg shadow-xl z-30 hidden">Stream not found (404)</div>
+    <div id="error-message" class="absolute top-0 left-1/2 -translate-x-1/2 mt-4 p-3 bg-red-800 text-white text-sm rounded-lg shadow-xl z-30 hidden">Stream error / Not found</div>
 
     <!-- Episode Panel Backdrop -->
     <div id="episode-panel-backdrop"></div>
@@ -738,8 +738,8 @@ const remainingTimeDisplay = document.getElementById('remaining-time');
    SERVER SOURCES & MOVIEBOX STATE
    ------------------------------------------------------------------------- */
 let currentServer = 'default';
-let availableServers = {}; // { github: {...}, castle: {...}, modiplay: {...}, moviebox: [...] }
-let currentMovieBoxQualities = []; // Qualities array for current active MovieBox player
+let availableServers = {};
+let currentMovieBoxQualities = [];
 let currentMovieBoxQualityIndex = 0;
 
 let currentMediaTitle = '';
@@ -839,15 +839,14 @@ document.addEventListener('click', (e) => {
 function parseMovieBoxData(mbData) {
     if (!mbData) return;
 
-    // Load Subtitles from MovieBox API
     if (mbData.subtitles && Array.isArray(mbData.subtitles) && mbData.subtitles.length > 0) {
         loadSubtitlesFromApiData(mbData.subtitles);
     }
 
     const mbPlayers = {};
 
-    function addQualityToPlayer(lang, res, urlWithHeaders, rawTitle) {
-        if (!lang || !urlWithHeaders) return;
+    function addQualityToPlayer(lang, res, rawUrl, rawTitle) {
+        if (!lang || !rawUrl) return;
         const langClean = lang.trim();
         const key = langClean.toLowerCase();
 
@@ -863,56 +862,49 @@ function parseMovieBoxData(mbData) {
             };
         }
 
-        const proxyUrl = `https://workingg.vercel.app/api/proxy?url=${encodeURIComponent(urlWithHeaders)}`;
         const resNum = parseInt(res) || 0;
-
         const existing = mbPlayers[key].qualities.find(q => q.resNum === resNum || q.resolution === `${res}p`);
         if (!existing) {
             mbPlayers[key].qualities.push({
                 resolution: res ? `${res}p` : 'HD',
                 resNum: resNum,
-                url: proxyUrl,
+                url: rawUrl,
                 rawTitle: rawTitle
             });
         }
     }
 
-    // 1. Process sideBySide (Player 1 Original & Player 2 Hindi)
     if (mbData.sideBySide) {
         if (mbData.sideBySide.player1) {
             const p1 = mbData.sideBySide.player1;
-            addQualityToPlayer('Original', p1.resolution || '1080', p1.urlWithHeaders || p1.url, p1.rawTitle);
+            addQualityToPlayer('Original', p1.resolution || '1080', p1.url || p1.videoUrl, p1.rawTitle);
         }
         if (mbData.sideBySide.player2) {
             const p2 = mbData.sideBySide.player2;
-            addQualityToPlayer('Hindi', p2.resolution || '1080', p2.urlWithHeaders || p2.url, p2.rawTitle);
+            addQualityToPlayer('Hindi', p2.resolution || '1080', p2.url || p2.videoUrl, p2.rawTitle);
         }
     }
 
-    // 2. Process topTwoResults
     if (Array.isArray(mbData.topTwoResults)) {
         mbData.topTwoResults.forEach(p => {
-            if (p) addQualityToPlayer(p.language || 'Original', p.resolution || '1080', p.urlWithHeaders || p.url, p.rawTitle);
+            if (p) addQualityToPlayer(p.language || 'Original', p.resolution || '1080', p.url || p.videoUrl, p.rawTitle);
         });
     }
 
-    // 3. Process audioTracks
     if (Array.isArray(mbData.audioTracks)) {
         mbData.audioTracks.forEach(at => {
-            if (at) addQualityToPlayer(at.language || 'Original', at.resolution || '1080', at.urlWithHeaders || at.url, at.rawTitle);
+            if (at) addQualityToPlayer(at.language || 'Original', at.resolution || '1080', at.url || at.videoUrl, at.rawTitle);
         });
     }
 
-    // 4. Process qualities
     if (Array.isArray(mbData.qualities)) {
         mbData.qualities.forEach(q => {
-            if (q) addQualityToPlayer(q.language || 'Original', q.resolution || '1080', q.urlWithHeaders || q.url, q.rawTitle);
+            if (q) addQualityToPlayer(q.language || 'Original', q.resolution || '1080', q.url || q.videoUrl, q.rawTitle);
         });
     }
 
-    // Fallback if videoUrl exists at root
-    if (Object.keys(mbPlayers).length === 0 && mbData.urlWithHeaders) {
-        addQualityToPlayer('Original', mbData.quality || '1080', mbData.urlWithHeaders, 'MovieBox');
+    if (Object.keys(mbPlayers).length === 0 && mbData.videoUrl) {
+        addQualityToPlayer('Original', mbData.quality || '1080', mbData.videoUrl, 'MovieBox');
     }
 
     availableServers['moviebox'] = [];
@@ -932,12 +924,10 @@ async function fetchAllSources(title, id, type, s, e) {
         const res = await fetch(url);
         const data = await res.json();
 
-        // Process Root Level MovieBox Data if returned directly
         if (data.source === 'moviebox' || data.audioTracks || data.sideBySide || data.qualities) {
             parseMovieBoxData(data);
         }
 
-        // Process sources array
         if (data.sources && Array.isArray(data.sources)) {
             data.sources.forEach(source => {
                 if (source.source === 'moviebox') {
@@ -945,7 +935,7 @@ async function fetchAllSources(title, id, type, s, e) {
                 } else if (source.source === 'castle' && source.videoUrl) {
                     availableServers['castle'] = {
                         label: 'Castle',
-                        url: `https://workingg.vercel.app/api/proxy?url=${encodeURIComponent(source.videoUrl)}&mode=master`
+                        url: source.videoUrl
                     };
                 } else if (source.source === 'modiplay' && source.videoUrl) {
                     let rawUrl = source.videoUrl;
@@ -1026,7 +1016,7 @@ function playServer(serverKey, subIndex) {
         if (!mbOption || !mbOption.qualities.length) return;
 
         currentMovieBoxQualities = mbOption.qualities;
-        currentMovieBoxQualityIndex = 0; // Default to highest resolution (1080p)
+        currentMovieBoxQualityIndex = 0;
         url = currentMovieBoxQualities[0].url;
         currentServer = 'moviebox_' + subIndex;
     } else {
@@ -1184,13 +1174,6 @@ async function applyLocationBasedAudio(hls) {
     _audioAutoApplied = true;
     return selectedIndex;
 }
-
-/* -------------------------------------------------------------------------
-   INTRODB TIMESTAMPS
-   ------------------------------------------------------------------------- */
-const INTRODB_API = 'https://api.theintrodb.org/v3/media';
-let _introdbData = null;
-let _activeSkipSegment = null;
 
 const languageCodeMap = {
     'eng':'English','en':'English','und':'Undefined','hin':'Hindi','hi':'Hindi',
@@ -1448,36 +1431,18 @@ function renderTracksMenu() {
     }
 
     const allTextTracks = video.textTracks ? Array.from(video.textTracks).filter(t => t.kind === 'subtitles' || t.kind === 'captions') : [];
-    const trackElements = Array.from(video.querySelectorAll('track'));
-
-    function getTrackSource(textTrack) {
-        const el = trackElements.find(el => el.track === textTrack);
-        if (!el) return 'hls';
-        if (el.hasAttribute('data-api'))    return 'api';
-        if (el.hasAttribute('data-urlset')) return 'urlset';
-        if (el.hasAttribute('data-wyzie'))  return 'wyzie';
-        if (el.hasAttribute('data-github')) return 'github';
-        return 'hls';
-    }
-
-    const SOURCE_ORDER = { hls: 0, api: 1, urlset: 2, github: 3, wyzie: 4 };
-    const sortedTracks = allTextTracks
-        .map((t, i) => ({ track: t, originalIdx: i, source: getTrackSource(t) }))
-        .sort((a, b) => SOURCE_ORDER[a.source] - SOURCE_ORDER[b.source]);
-
     const curSubIdx = allTextTracks.findIndex(t => t.mode === 'hidden');
 
-    // Off Option
     const offLi = document.createElement('li');
     offLi.className = `track-selector cursor-pointer flex items-center gap-2 ${curSubIdx === -1 ? 'font-bold text-white' : 'text-gray-400'}`;
     offLi.innerHTML = `<span style="visibility:${curSubIdx === -1 ?'visible':'hidden'};"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14"><path d="M21.2928 4.29285L22.7071 5.70706L8.70706 19.7071C8.51952 19.8946 8.26517 20 7.99995 20C7.73474 20 7.48038 19.8946 7.29285 19.7071L0.292847 12.7071L1.70706 11.2928L7.99995 17.5857L21.2928 4.29285Z" fill="white"/></svg></span><span>Off</span>`;
     offLi.addEventListener('click', () => handleTrackSelection('subtitle', -1));
     subtitleList.appendChild(offLi);
 
-    if (!sortedTracks.length) {
+    if (!allTextTracks.length) {
         subtitleList.innerHTML += '<li class="text-gray-400">No subtitles found.</li>';
     } else {
-        sortedTracks.forEach(({ track, originalIdx, source }) => {
+        allTextTracks.forEach((track, originalIdx) => {
             const selected = track.mode === 'hidden';
             const li = document.createElement('li');
             li.className = `track-selector cursor-pointer flex items-center gap-2 ${selected ? 'font-bold text-white' : 'text-gray-400'}`;
@@ -1542,7 +1507,6 @@ function renderSpeedList() {
 function renderQualityList() {
     qualityList.innerHTML = '';
 
-    // Handle MovieBox MP4 Qualities Combination
     if (currentMovieBoxQualities && currentMovieBoxQualities.length > 0) {
         currentMovieBoxQualities.forEach((q, idx) => {
             const selected = (idx === currentMovieBoxQualityIndex);
@@ -1573,7 +1537,6 @@ function renderQualityList() {
         return;
     }
 
-    // Standard HLS.js Quality Levels
     const levels = (isHlsJsMode && hlsInstance) ? hlsInstance.levels : [];
     if (!levels.length) {
         qualityList.innerHTML = '<li class="text-gray-400" style="padding:6px 10px;">Auto / HD</li>';
@@ -1709,7 +1672,7 @@ function setupUIControls() {
     seekBar.addEventListener('pointerleave', () => { if (!isSeeking) hideSeekTooltip(); });
 
     document.addEventListener('fullscreenchange', updateFullscreenIcon);
-    video.addEventListener('timeupdate', () => { updateProgress(); checkIntrodbSegments(); });
+    video.addEventListener('timeupdate', () => { updateProgress(); });
     video.addEventListener('progress', updateBufferProgress);
     video.addEventListener('waiting', showLoader);
     video.addEventListener('stalled', showLoader);
@@ -1727,20 +1690,11 @@ function setupUIControls() {
 }
 
 /* -------------------------------------------------------------------------
-   HLS / DIRECT VIDEO PLAYER INIT
+   HLS / DIRECT VIDEO PLAYER INIT (STABILIZED)
    ------------------------------------------------------------------------- */
 function isDirectVideoUrl(url) {
-    if (url && url.startsWith('blob:')) return true;
-    if (url && url.includes('workingg.vercel.app/api/proxy')) {
-        try {
-            const urlParam = new URL(url).searchParams.get('url');
-            if (urlParam) {
-                const decoded = decodeURIComponent(urlParam);
-                if (decoded.includes('.mp4') || decoded.includes('|')) return true;
-            }
-        } catch(e) {}
-    }
-    if (url && url.includes('modiplay.xyz')) return false;
+    if (!url) return false;
+    if (url.startsWith('blob:')) return true;
     try {
         return /\.(mp4|webm|ogg|ogv|mov|mkv|avi|flv|m4v|ts)(\?|$)/i.test(new URL(url).pathname);
     } catch (e) {
@@ -1759,13 +1713,12 @@ function initHlsPlayer(url) {
         hlsInstance = null;
     }
 
-    Array.from(video.querySelectorAll('track[data-github], track[data-wyzie], track[data-urlset], track[data-api]')).forEach(t => t.remove());
+    Array.from(video.querySelectorAll('track[data-api]')).forEach(t => t.remove());
     errorMessageDiv.classList.add('hidden');
 
     resolvedUrl = url;
     videoStorageKey = generateStorageKey(url);
 
-    // Direct MP4 playback
     if (isDirectVideoUrl(url)) {
         isHlsJsMode = false;
         showLoader();
@@ -1774,7 +1727,7 @@ function initHlsPlayer(url) {
         video.removeAttribute('src');
         video.load();
 
-        const onLoadedMetadata = async () => {
+        const onLoadedMetadata = () => {
             renderTracksMenu();
             renderQualityList();
             hideLoader();
@@ -1786,42 +1739,71 @@ function initHlsPlayer(url) {
 
         video.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
         video.src = url;
+        video.load();
         return;
     }
 
-    // HLS Stream Playback
     if (Hls.isSupported()) {
         isHlsJsMode = true;
         showLoader();
-        const h = new Hls({ renderTextTracksNatively: true, subtitleDisplay: true });
+        const h = new Hls({
+            enableWorker: true,
+            lowLatencyMode: false,
+            backBufferLength: 90
+        });
         hlsInstance = h;
 
-        h.on(Hls.Events.MEDIA_ATTACHED, () => h.loadSource(url));
+        h.loadSource(url);
+        h.attachMedia(video);
+
         h.on(Hls.Events.MANIFEST_PARSED, async () => {
             await applyLocationBasedAudio(h);
             renderTracksMenu();
             renderQualityList();
+            hideLoader();
+            setupInactivityDetection();
+            restoreVideoProgress();
+            startProgressSaving();
+            video.play().catch(() => {});
         });
+
         h.on(Hls.Events.AUDIO_TRACK_SWITCHED, renderTracksMenu);
         h.on(Hls.Events.SUBTITLE_TRACK_SWITCHED, renderTracksMenu);
         h.on(Hls.Events.LEVEL_SWITCHED, renderQualityList);
+
         h.on(Hls.Events.ERROR, (event, data) => {
             if (!data.fatal) return;
-            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) h.startLoad();
-            else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) h.recoverMediaError();
-            else { displayError("Fatal HLS error"); h.destroy(); hideLoader(); }
+            switch (data.type) {
+                case Hls.ErrorTypes.NETWORK_ERROR:
+                    console.warn('Network fragment error encountered, recovering...', data);
+                    h.startLoad();
+                    break;
+                case Hls.ErrorTypes.MEDIA_ERROR:
+                    console.warn('Media fragment error encountered, recovering...', data);
+                    h.recoverMediaError();
+                    break;
+                default:
+                    displayError('Fatal playback error occurred.');
+                    h.destroy();
+                    hideLoader();
+                    break;
+            }
         });
-        h.attachMedia(video);
-
-        video.addEventListener('canplay', async () => {
-            await applyLocationBasedAudio(h);
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        isHlsJsMode = false;
+        showLoader();
+        video.src = url;
+        video.addEventListener('loadedmetadata', () => {
+            renderTracksMenu();
+            renderQualityList();
             hideLoader();
             setupInactivityDetection();
+            restoreVideoProgress();
             startProgressSaving();
             video.play().catch(() => {});
-        }, {once:true});
+        }, { once: true });
     } else {
-        displayError('Browser does not support HLS');
+        displayError('HLS playback is not supported in this browser.');
         hideLoader();
     }
 }
@@ -1852,16 +1834,9 @@ async function loadSubtitlesFromApiData(subtitlesArray) {
     const trackData = await Promise.all(subtitlesArray.map(async (sub) => {
         if (!sub || !sub.url) return null;
         try {
-            let srtText = '';
-            try {
-                const directRes = await fetch(sub.url, { cache: 'no-store' });
-                if (directRes.ok) srtText = await directRes.text();
-            } catch (e) {
-                const proxyUrl = `https://workingg.vercel.app/api/proxy?url=${encodeURIComponent(sub.url)}`;
-                const proxyRes = await fetch(proxyUrl, { cache: 'no-store' });
-                if (proxyRes.ok) srtText = await proxyRes.text();
-            }
-
+            const res = await fetch(sub.url, { cache: 'no-store' });
+            if (!res.ok) return null;
+            const srtText = await res.text();
             if (!srtText || !srtText.trim()) return null;
 
             const vttText = srtToVtt(srtText);
@@ -1913,7 +1888,7 @@ async function playMovie(movieId) {
         if (!res.ok) { displayError(`Could not load movie data.`); hideLoader(); return; }
         const cleanUrl = (await res.text()).trim();
 
-        if (cleanUrl && (cleanUrl.includes('.m3u8') || cleanUrl.includes('http'))) {
+        if (cleanUrl) {
             availableServers['github'] = { label: 'GitHub (Original)', url: cleanUrl };
             initHlsPlayer(cleanUrl);
             const title = await fetchAndSetTitle('movie', movieId);
