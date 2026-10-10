@@ -1342,48 +1342,60 @@ async function fetchAllSources(title, id, type, s, e) {
         availableServers = {};
         apiSubtitles = [];
         
+        // Handle both `sources` array and single source object
+        let sourcesArray = [];
         if (data.sources && Array.isArray(data.sources)) {
-            data.sources.forEach(source => {
-                if (source.source === 'moviebox') {
-                    console.log('[DEBUG] Parsing MovieBox source...');
-                    if (source.subtitles) apiSubtitles = source.subtitles;
-                    const audioTracks = source.audioTracks || [];
-                    const qualities = source.qualities || [];
-                    
-                    // Create a server option for each audio track (language)
-                    audioTracks.forEach(track => {
-                        const lang = track.language || 'Original';
-                        const key = `moviebox_${lang.toLowerCase().replace(/\s+/g, '_')}`;
-                        availableServers[key] = {
-                            name: `MovieBox [${lang}]`,
-                            type: 'moviebox',
-                            audioTrack: lang,
-                            qualities: qualities.filter(q => q.language === lang || (lang === 'Original' && q.language === 'Original')),
-                            subtitles: apiSubtitles
-                        };
-                        console.log(`[DEBUG] Added Server: ${key}`, availableServers[key]);
-                    });
-                } else if (source.source === 'castle') {
-                    console.log('[DEBUG] Parsing Castle source...');
-                    availableServers['castle'] = {
-                        name: 'Castle',
-                        type: 'castle',
-                        url: source.videoUrl
-                    };
-                    console.log('[DEBUG] Added Server: castle', availableServers['castle']);
-                } else if (source.source === 'modiplay') {
-                    console.log('[DEBUG] Parsing ModiPlay source...');
-                    availableServers['modiplay'] = {
-                        name: 'ModiPlay',
-                        type: 'modiplay',
-                        url: source.videoUrl
-                    };
-                    console.log('[DEBUG] Added Server: modiplay', availableServers['modiplay']);
-                }
-            });
-        } else {
-            console.warn('[DEBUG] No "sources" array found in API response.');
+            sourcesArray = data.sources;
+        } else if (data.source) {
+            sourcesArray = [data]; // Fallback for single source response
         }
+        
+        sourcesArray.forEach(source => {
+            if (source.source === 'moviebox') {
+                console.log('[DEBUG] Parsing MovieBox source...');
+                if (source.subtitles) apiSubtitles = source.subtitles;
+                const audioTracks = source.audioTracks || [];
+                const qualities = source.qualities || [];
+                
+                // Create a server option for each audio track (language)
+                audioTracks.forEach(track => {
+                    const lang = track.language || 'Original';
+                    const key = `moviebox_${lang.toLowerCase().replace(/\s+/g, '_')}`;
+                    
+                    // Filter qualities strictly for this language
+                    const langQualities = qualities.filter(q => {
+                        const qLang = q.language || 'Original';
+                        return qLang.toLowerCase() === lang.toLowerCase();
+                    });
+                    
+                    availableServers[key] = {
+                        name: `MovieBox [${lang}]`,
+                        type: 'moviebox',
+                        audioTrack: lang,
+                        audioTrackUrl: track.urlWithHeaders, // Fallback URL
+                        qualities: langQualities,
+                        subtitles: apiSubtitles
+                    };
+                    console.log(`[DEBUG] Added Server: ${key}`, availableServers[key]);
+                });
+            } else if (source.source === 'castle') {
+                console.log('[DEBUG] Parsing Castle source...');
+                availableServers['castle'] = {
+                    name: 'Castle',
+                    type: 'castle',
+                    url: source.videoUrl
+                };
+                console.log('[DEBUG] Added Server: castle', availableServers['castle']);
+            } else if (source.source === 'modiplay') {
+                console.log('[DEBUG] Parsing ModiPlay source...');
+                availableServers['modiplay'] = {
+                    name: 'ModiPlay',
+                    type: 'modiplay',
+                    url: source.videoUrl
+                };
+                console.log('[DEBUG] Added Server: modiplay', availableServers['modiplay']);
+            }
+        });
         
         console.log('[DEBUG] Final Available Servers Object:', availableServers);
         updateServerMenu();
@@ -1474,16 +1486,26 @@ function playServer(serverKey) {
         console.log('[DEBUG] Playing MovieBox source');
         currentQualities = serverData.qualities || [];
         console.log('[DEBUG] Setting currentQualities to:', currentQualities);
-        // Play the first quality or 1080p
-        const bestQuality = currentQualities.find(q => q.resolution === '1080') || currentQualities[0];
-        if (bestQuality) {
-            const proxyUrl = `https://workingg.vercel.app/api/proxy?url=${encodeURIComponent(bestQuality.urlWithHeaders)}`;
+        
+        let targetUrl = '';
+        
+        if (currentQualities.length > 0) {
+            const bestQuality = currentQualities.find(q => q.resolution === '1080') || currentQualities[0];
+            targetUrl = bestQuality.urlWithHeaders;
+            console.log(`[DEBUG] Selected quality: ${bestQuality.resolution}p`);
+        } else if (serverData.audioTrackUrl) {
+            targetUrl = serverData.audioTrackUrl;
+            console.log(`[DEBUG] No qualities found, using fallback audio track URL.`);
+        }
+        
+        if (targetUrl) {
+            const proxyUrl = `https://workingg.vercel.app/api/proxy?url=${encodeURIComponent(targetUrl)}`;
             console.log('[DEBUG] MovieBox Proxy URL:', proxyUrl);
             initHlsPlayer(proxyUrl);
             // Load subtitles from API
             loadApiSubtitles(serverData.subtitles);
         } else {
-            console.warn('[DEBUG] No qualities found for MovieBox server.');
+            console.warn('[DEBUG] No playable URL found for MovieBox server.');
         }
     } else if (serverData.type === 'castle') {
         console.log('[DEBUG] Playing Castle source');
@@ -2841,6 +2863,18 @@ function getMirrorUrl(originalUrl) {
 
 function initHlsPlayer(url) {
     console.log(`[DEBUG] initHlsPlayer called with URL: ${url}`);
+    
+    // --- FIX: Completely clear the old video state to prevent old stream from playing ---
+    if (hlsInstance) {
+        hlsInstance.destroy();
+        hlsInstance = null;
+    }
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+    isHlsJsMode = false;
+    // ----------------------------------------------------------------------------------
+
     saveVideoProgress();
     if (saveProgressInterval) {
         clearInterval(saveProgressInterval);
@@ -2849,10 +2883,6 @@ function initHlsPlayer(url) {
 
     stopProgressSaving();
     hasRestoredPosition = false;
-    if (hlsInstance) {
-        hlsInstance.destroy();
-        hlsInstance = null;
-    }
     Array.from(video.querySelectorAll('track[data-github], track[data-wyzie], track[data-urlset], track[data-api-subtitle]')).forEach(t => t.remove());
     errorMessageDiv.classList.add('hidden');
 
