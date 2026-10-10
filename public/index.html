@@ -1328,6 +1328,7 @@ document.addEventListener('click', (e) => {
 });
 
 async function fetchAllSources(title, id, type, s, e) {
+    console.log(`[DEBUG] fetchAllSources triggered for ${type}: ${title} (ID: ${id})`);
     serverList.innerHTML = '<div class="server-option" style="color:#b3b3b3; cursor:default;">Loading servers...</div>';
     let url = `/api/source?title=${encodeURIComponent(title)}&id=${id}&type=${type}&source=all`;
     if (type === 'tv') {
@@ -1336,6 +1337,7 @@ async function fetchAllSources(title, id, type, s, e) {
     try {
         const res = await fetch(url);
         const data = await res.json();
+        console.log('[DEBUG] API Source Response:', data);
         
         availableServers = {};
         apiSubtitles = [];
@@ -1343,42 +1345,50 @@ async function fetchAllSources(title, id, type, s, e) {
         if (data.sources && Array.isArray(data.sources)) {
             data.sources.forEach(source => {
                 if (source.source === 'moviebox') {
-                    const qualities = source.qualities || [];
-                    const audioTracks = source.audioTracks || [];
+                    console.log('[DEBUG] Parsing MovieBox source...');
                     if (source.subtitles) apiSubtitles = source.subtitles;
-
-                    // Extract player1 and player2
-                    const players = [source.player1, source.player2].filter(Boolean);
-                    players.forEach((player) => {
-                        const lang = player.language || 'Original';
+                    const audioTracks = source.audioTracks || [];
+                    const qualities = source.qualities || [];
+                    
+                    // Create a server option for each audio track (language)
+                    audioTracks.forEach(track => {
+                        const lang = track.language || 'Original';
                         const key = `moviebox_${lang.toLowerCase().replace(/\s+/g, '_')}`;
                         availableServers[key] = {
                             name: `MovieBox [${lang}]`,
                             type: 'moviebox',
                             audioTrack: lang,
-                            qualities: qualities.filter(q => q.language === lang),
+                            qualities: qualities.filter(q => q.language === lang || (lang === 'Original' && q.language === 'Original')),
                             subtitles: apiSubtitles
                         };
+                        console.log(`[DEBUG] Added Server: ${key}`, availableServers[key]);
                     });
                 } else if (source.source === 'castle') {
+                    console.log('[DEBUG] Parsing Castle source...');
                     availableServers['castle'] = {
                         name: 'Castle',
                         type: 'castle',
                         url: source.videoUrl
                     };
+                    console.log('[DEBUG] Added Server: castle', availableServers['castle']);
                 } else if (source.source === 'modiplay') {
+                    console.log('[DEBUG] Parsing ModiPlay source...');
                     availableServers['modiplay'] = {
                         name: 'ModiPlay',
                         type: 'modiplay',
                         url: source.videoUrl
                     };
+                    console.log('[DEBUG] Added Server: modiplay', availableServers['modiplay']);
                 }
             });
+        } else {
+            console.warn('[DEBUG] No "sources" array found in API response.');
         }
         
+        console.log('[DEBUG] Final Available Servers Object:', availableServers);
         updateServerMenu();
     } catch (error) {
-        console.error('Failed to fetch sources:', error);
+        console.error('[DEBUG] Failed to fetch sources:', error);
         serverList.innerHTML = '<div class="server-option" style="color:#ff4d4f; cursor:default;">Failed to load servers</div>';
     }
 }
@@ -1443,41 +1453,58 @@ function updateServerMenu() {
 }
 
 function playServer(serverKey) {
+    console.log(`[DEBUG] playServer called with key: ${serverKey}`);
     currentServer = serverKey;
     updateServerMenu();
     currentQualities = [];
     
     if (serverKey === 'default') {
-        // Play the original GitHub URL
+        console.log('[DEBUG] Playing default GitHub source');
         if (resolvedUrl) initHlsPlayer(resolvedUrl);
         return;
     }
     
     const serverData = availableServers[serverKey];
-    if (!serverData) return;
+    if (!serverData) {
+        console.error(`[DEBUG] Server data not found for key: ${serverKey}`);
+        return;
+    }
 
     if (serverData.type === 'moviebox') {
+        console.log('[DEBUG] Playing MovieBox source');
         currentQualities = serverData.qualities || [];
+        console.log('[DEBUG] Setting currentQualities to:', currentQualities);
         // Play the first quality or 1080p
         const bestQuality = currentQualities.find(q => q.resolution === '1080') || currentQualities[0];
         if (bestQuality) {
             const proxyUrl = `https://workingg.vercel.app/api/proxy?url=${encodeURIComponent(bestQuality.urlWithHeaders)}`;
+            console.log('[DEBUG] MovieBox Proxy URL:', proxyUrl);
             initHlsPlayer(proxyUrl);
             // Load subtitles from API
             loadApiSubtitles(serverData.subtitles);
+        } else {
+            console.warn('[DEBUG] No qualities found for MovieBox server.');
         }
     } else if (serverData.type === 'castle') {
+        console.log('[DEBUG] Playing Castle source');
         const proxyUrl = `https://workingg.vercel.app/api/proxy?url=${encodeURIComponent(serverData.url)}&mode=master`;
+        console.log('[DEBUG] Castle Proxy URL:', proxyUrl);
         initHlsPlayer(proxyUrl);
     } else if (serverData.type === 'modiplay') {
+        console.log('[DEBUG] Playing ModiPlay source');
         const rawUrl = serverData.url;
         const playUrl = rawUrl.startsWith('/') ? `https://rozgarlelo.modiplay.xyz${rawUrl}` : rawUrl;
+        console.log('[DEBUG] ModiPlay URL:', playUrl);
         initHlsPlayer(playUrl);
     }
 }
 
 async function loadApiSubtitles(subs) {
-    if (!subs || !subs.length) return;
+    if (!subs || !subs.length) {
+        console.log('[DEBUG] No API subtitles to load.');
+        return;
+    }
+    console.log(`[DEBUG] Loading ${subs.length} API subtitles...`);
     
     // Clear old API subtitles
     Array.from(video.querySelectorAll('track[data-api-subtitle]')).forEach(t => t.remove());
@@ -1498,8 +1525,9 @@ async function loadApiSubtitles(subs) {
             track.src = url;
             track.setAttribute('data-api-subtitle', '1');
             video.appendChild(track);
+            console.log(`[DEBUG] Loaded API subtitle: ${sub.language}`);
         } catch (e) {
-            console.warn('Failed to load API subtitle:', sub.url, e);
+            console.warn('[DEBUG] Failed to load API subtitle:', sub.url, e);
         }
     }
     renderTracksMenu();
@@ -2812,6 +2840,7 @@ function getMirrorUrl(originalUrl) {
 }
 
 function initHlsPlayer(url) {
+    console.log(`[DEBUG] initHlsPlayer called with URL: ${url}`);
     saveVideoProgress();
     if (saveProgressInterval) {
         clearInterval(saveProgressInterval);
@@ -2837,6 +2866,7 @@ function initHlsPlayer(url) {
 
     /* ---- Direct video file (MP4, WebM, etc.) ---- */
     if (isDirectVideoUrl(url)) {
+        console.log('[DEBUG] Detected direct video URL (MP4/WebM). Using native playback.');
         isHlsJsMode = false;
         showLoader();
 
@@ -2904,6 +2934,7 @@ function initHlsPlayer(url) {
     }
 
     /* ---- HLS stream (.m3u8) ---- */
+    console.log('[DEBUG] Detected HLS stream. Initializing HLS.js.');
     if (Hls.isSupported()) {
         isHlsJsMode = true;
         showLoader();
@@ -3028,6 +3059,12 @@ async function playMovie(movieId) {
     _revokeAllSubtitleBlobs();
     showLoader();
 
+    // Fetch title first to ensure we have it for API fallback
+    const title = await fetchAndSetTitle('movie', movieId);
+    currentMediaTitle = title || '';
+    currentMediaId = movieId;
+    currentMediaType = 'movie';
+
     const githubUrl =
         `https://raw.githubusercontent.com/Watchout2025/api/refs/heads/main/hls/movie/${movieId}`;
 
@@ -3035,6 +3072,17 @@ async function playMovie(movieId) {
         const res = await fetch(githubUrl, { cache: 'no-store' });
         if (!res.ok) {
             if (res.status === 404) {
+                console.warn('[GitHub] HLS source 404. Attempting API fallback.');
+                if (title) {
+                    await fetchAllSources(title, movieId, 'movie');
+                    const firstApiServer = Object.keys(availableServers)[0];
+                    if (firstApiServer) {
+                        console.log(`[Fallback] Auto-playing API server: ${firstApiServer}`);
+                        playServer(firstApiServer);
+                        return;
+                    }
+                }
+                console.warn('[Fallback] No API sources available, using external fallback.');
                 showFallbackPlayer('movie', movieId);
                 return;
             }
@@ -3046,6 +3094,15 @@ async function playMovie(movieId) {
         const cleanUrl = (await res.text()).trim();
 
         if (!cleanUrl) {
+            console.warn('[GitHub] Empty HLS source. Attempting API fallback.');
+            if (title) {
+                await fetchAllSources(title, movieId, 'movie');
+                const firstApiServer = Object.keys(availableServers)[0];
+                if (firstApiServer) {
+                    playServer(firstApiServer);
+                    return;
+                }
+            }
             showFallbackPlayer('movie', movieId);
             return;
         }
@@ -3056,23 +3113,29 @@ async function playMovie(movieId) {
         }
 
         if (cleanUrl.toLowerCase().endsWith('.txt') && !cleanUrl.toLowerCase().includes('/hls3/')) {
+            console.warn('[GitHub] Invalid .txt source. Attempting API fallback.');
+            if (title) {
+                await fetchAllSources(title, movieId, 'movie');
+                const firstApiServer = Object.keys(availableServers)[0];
+                if (firstApiServer) {
+                    playServer(firstApiServer);
+                    return;
+                }
+            }
             showFallbackPlayer('movie', movieId);
             return;
         }
 
         if (cleanUrl && (cleanUrl.includes('.m3u8') || cleanUrl.includes('http'))) {
+            console.log('[GitHub] Successfully loaded HLS source.');
             initHlsPlayer(cleanUrl);
             loadSubtitlesFromUrlset(cleanUrl);
             loadSubtitlesFromGithub('movie', movieId);
             loadSubtitlesFromWyzie('movie', movieId);
-            const title = await fetchAndSetTitle('movie', movieId);
             loadIntrodbTimestamps('movie', movieId);
             
-            // NEW: Fetch alternative sources
+            // Still fetch API sources for the menu
             if (title) {
-                currentMediaTitle = title;
-                currentMediaId = movieId;
-                currentMediaType = 'movie';
                 fetchAllSources(title, movieId, 'movie');
             }
         } else {
@@ -3149,6 +3212,14 @@ async function playEpisode(seriesId, seasonNumber, episodeNumber) {
 
     showLoader();
 
+    // Fetch title first to ensure we have it for API fallback
+    const title = await fetchAndSetTitle('tv', seriesId, seasonNumber, episodeNumber);
+    currentMediaTitle = title || '';
+    currentMediaId = seriesId;
+    currentMediaType = 'tv';
+    currentSeason = seasonNumber;
+    currentEpisode = episodeNumber;
+
     const githubJsonUrl =
         `https://raw.githubusercontent.com/Watchout2025/api/refs/heads/main/hls/tv/${seriesId}/S${seasonNumber}.json`;
 
@@ -3156,6 +3227,17 @@ async function playEpisode(seriesId, seasonNumber, episodeNumber) {
         const res = await fetch(githubJsonUrl, { cache: 'no-store' });
         if (!res.ok) {
             if (res.status === 404) {
+                console.warn('[GitHub] HLS source 404. Attempting API fallback.');
+                if (title) {
+                    await fetchAllSources(title, seriesId, 'tv', seasonNumber, episodeNumber);
+                    const firstApiServer = Object.keys(availableServers)[0];
+                    if (firstApiServer) {
+                        console.log(`[Fallback] Auto-playing API server: ${firstApiServer}`);
+                        playServer(firstApiServer);
+                        return;
+                    }
+                }
+                console.warn('[Fallback] No API sources available, using external fallback.');
                 showFallbackPlayer('tv', seriesId, seasonNumber, episodeNumber);
                 return;
             }
@@ -3173,25 +3255,29 @@ async function playEpisode(seriesId, seasonNumber, episodeNumber) {
         }
 
         if (fileId && String(fileId).trim().toLowerCase().endsWith('.txt') && !String(fileId).trim().toLowerCase().includes('/hls3/')) {
+            console.warn('[GitHub] Invalid .txt source. Attempting API fallback.');
+            if (title) {
+                await fetchAllSources(title, seriesId, 'tv', seasonNumber, episodeNumber);
+                const firstApiServer = Object.keys(availableServers)[0];
+                if (firstApiServer) {
+                    playServer(firstApiServer);
+                    return;
+                }
+            }
             showFallbackPlayer('tv', seriesId, seasonNumber, episodeNumber);
             return;
         }
 
         if (fileId) {
+            console.log('[GitHub] Successfully loaded HLS source.');
             initHlsPlayer(fileId);
             loadSubtitlesFromUrlset(fileId);
             loadSubtitlesFromGithub('tv', seriesId, seasonNumber, episodeNumber);
             loadSubtitlesFromWyzie('tv', seriesId, seasonNumber, episodeNumber);
-            const title = await fetchAndSetTitle('tv', seriesId, seasonNumber, episodeNumber);
             loadIntrodbTimestamps('tv', seriesId, seasonNumber, episodeNumber);
 
-            // NEW: Fetch alternative sources
+            // Still fetch API sources for the menu
             if (title) {
-                currentMediaTitle = title;
-                currentMediaId = seriesId;
-                currentMediaType = 'tv';
-                currentSeason = seasonNumber;
-                currentEpisode = episodeNumber;
                 fetchAllSources(title, seriesId, 'tv', seasonNumber, episodeNumber);
             }
         } else {
