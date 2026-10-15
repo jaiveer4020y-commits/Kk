@@ -1,7 +1,7 @@
 /**
  * Triple Video Source API - Castle + Modiplay + MovieBox
  * Fixed: GZIP decompression in fetchUrl & Castle empty stream handling
- * Feature: Side-by-Side Dual Stream Extraction with Hindi Prioritization
+ * Feature: Side-by-Side Dual Stream Extraction with Hindi Prioritization + Python Proxy Probing Logic
  */
 
 const https = require('https');
@@ -11,13 +11,28 @@ const { URL } = require('url');
 const crypto = require('crypto');
 
 // ============================================================
-// CONFIGURATION
+// CONFIGURATION & PYTHON PROXY LOGIC
 // ============================================================
 
 const CASTLE_API = "https://api.hlowb.com";
 const MODIPLAY_API = "https://rozgarlelo.modiplay.xyz";
 const MOVIEBOX_BASE_URL = "https://h5-api.aoneroom.com";
 const MOVIEBOX_H5_WEB = "https://h5.aoneroom.com";
+
+const MOVIEBOX_REFERER = "https://movieboxonline.net/";
+const PROXY_BASE = "https://workingg.vercel.app/api/proxy";
+
+const EXTRA_HEADERS = {
+  "Referer": MOVIEBOX_REFERER,
+  "Origin": "https://movieboxonline.net",
+  "Accept": "*/*",
+  "Accept-Language": "en-US,en;q=0.5",
+  "Connection": "keep-alive",
+};
+
+const PROBE_ONLY_HEADERS = {
+  "Range": "bytes=0-1",
+};
 
 const CASTLE_CONFIG = {
   channel: "IndiaA",
@@ -32,7 +47,7 @@ const DEFAULT_UA = "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 
 let movieBoxTokenCache = { token: null, expiresAt: 0 };
 
 // ============================================================
-// UTILITIES & LOGGER
+// UTILITIES & PROXY PROBING (PYTHON PORT)
 // ============================================================
 
 function cleanVideoUrl(url) {
@@ -105,9 +120,7 @@ function fetchUrl(urlString, options = {}) {
             } else if (encoding === "br") {
               buffer = zlib.brotliDecompressSync(buffer);
             }
-          } catch (e) {
-            // Fall back to raw buffer if decompression fails
-          }
+          } catch (e) {}
 
           const data = buffer.toString("utf-8");
           if (res.statusCode >= 200 && res.statusCode < 400) {
@@ -143,6 +156,88 @@ function buildPipeUrl(url, headers = {}) {
     .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
     .join('&');
   return pairs ? `${cleanedUrl}|${pairs}` : cleanedUrl;
+}
+
+function buildProxyUrl(streamUrl, headers = {}, proxyBase = PROXY_BASE) {
+  const combined = buildPipeUrl(streamUrl, headers);
+  return `${proxyBase}?url=${encodeURIComponent(combined)}`;
+}
+
+function proxyHeaderVariants(finalHeaders = {}) {
+  const cookie = finalHeaders["Cookie"] || finalHeaders["cookie"];
+  const ua = finalHeaders["User-Agent"] || DEFAULT_UA;
+  const referer = finalHeaders["Referer"] || MOVIEBOX_REFERER;
+  const origin = finalHeaders["Origin"] || "https://movieboxonline.net";
+
+  const withCookie = (h) => {
+    if (cookie) h["Cookie"] = cookie;
+    return h;
+  };
+
+  const variants = [
+    ["full", { ...finalHeaders }],
+    ["full + accept-encoding", { ...finalHeaders, "Accept-Encoding": "gzip, deflate" }],
+    ["referer + origin + ua", withCookie({ "Referer": referer, "Origin": origin, "User-Agent": ua })],
+    ["referer + ua", withCookie({ "Referer": referer, "User-Agent": ua })],
+    ["exoplayer", withCookie({ "Referer": "https://api.inmoviebox.com", "User-Agent": "ExoPlayerLib/2.19.1" })],
+    ["ua only", withCookie({ "User-Agent": ua })],
+    ["no headers", withCookie({})],
+  ];
+
+  const seen = new Set();
+  const unique = [];
+  for (const [name, hdrs] of variants) {
+    const key = JSON.stringify(hdrs, Object.keys(hdrs).sort());
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push({ name, hdrs });
+  }
+  return unique;
+}
+
+async function probeViaProxy(proxyUrl, timeout = 12000) {
+  try {
+    const res = await fetchUrl(proxyUrl, {
+      headers: { "Range": "bytes=0-1", "Accept": "*/*" },
+      timeout,
+    });
+    return { status: res.statusCode, upstream: res.headers["x-upstream-status"] || "" };
+  } catch (e) {
+    return { status: null, upstream: e.message.substring(0, 80) };
+  }
+}
+
+async function findWorkingProxyVariant(streamUrl, finalHeaders, proxyBase = PROXY_BASE, logger) {
+  const variants = proxyHeaderVariants(finalHeaders);
+  const attempts = [];
+
+  for (const { name, hdrs } of variants) {
+    const proxyUrl = buildProxyUrl(streamUrl, hdrs, proxyBase);
+    const { status, upstream } = await probeViaProxy(proxyUrl);
+
+    attempts.push({ variant: name, status, upstream });
+    const mark = (status === 200 || status === 206) ? "✔" : "✘";
+    const extra = upstream ? ` (upstream ${upstream})` : "";
+    logger.log("PROXY_PROBE", `proxy variant '${name}': HTTP ${status} ${mark}${extra}`);
+
+    if (status === 200 || status === 206) {
+      return {
+        ok: true,
+        variant: name,
+        headers: hdrs,
+        proxy_url: proxyUrl,
+        attempts,
+      };
+    }
+  }
+
+  return {
+    ok: false,
+    variant: null,
+    headers: finalHeaders,
+    proxy_url: buildProxyUrl(streamUrl, finalHeaders, proxyBase),
+    attempts,
+  };
 }
 
 function unwrapData(json) {
@@ -215,10 +310,6 @@ function cloudfrontCookie(signCookie) {
   return parts.length ? parts.join('; ') : null;
 }
 
-/**
- * Pick one best (highest resolution) stream PER LANGUAGE so Original + Hindi
- * come back together. Order: Original first, then Hindi, then the rest.
- */
 function resNum(r) {
   const n = parseInt(String(r || '').replace(/[^0-9]/g, ''), 10);
   return Number.isFinite(n) ? n : 0;
@@ -620,68 +711,12 @@ async function getMovieBoxDetailPath(subjectId, defaultPath = "", logger) {
   return "";
 }
 
-async function getMovieBoxSubjectDetail(subjectId, token, logger) {
-  const url = `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/${subjectId}/detail`;
-  try {
-    const res = await fetchUrl(url, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json",
-        "User-Agent": DEFAULT_UA,
-        "Referer": MOVIEBOX_BASE_URL,
-      },
-      body: {},
-      timeout: 10000,
-    });
-    const parsed = JSON.parse(res.data || "{}");
-    return parsed.data || {};
-  } catch (e) {
-    logger.log("MOVIEBOX_TREE_DETAIL_ERR", e.message);
-  }
-  return {};
-}
-
-async function fetchMovieBoxEpisodePlay(episodeId, languageId, token, logger, resolution = 1080) {
-  const url = `${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/episode/${episodeId}/play`;
-  try {
-    const res = await fetchUrl(url, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json",
-        "User-Agent": DEFAULT_UA,
-        "Referer": MOVIEBOX_BASE_URL,
-      },
-      body: {
-        episodeId,
-        languageId: languageId || "",
-        resolution,
-        quality: "high",
-      },
-      timeout: 10000,
-    });
-    const parsed = JSON.parse(res.data || "{}");
-    return parsed.data?.sources || [];
-  } catch (e) {
-    logger.log("MOVIEBOX_EPISODE_PLAY_ERR", e.message);
-  }
-  return [];
-}
-
-// ------------------------------------------------------------
-// MovieBox: CloudStream logic (one subject per dub) + region/rate-limit fallbacks
-// ------------------------------------------------------------
-
 function escapeRegex(str) {
   return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// Same as the CloudStream provider: strips " S1-S5" / " S2" suffixes
 const SEASON_SUFFIX_REGEX = /\sS\d+(?:-S?\d+)*$/i;
 
-// Request identities tried in order for /subject/play and /subject/download.
-// "invalid region" / empty replies on one identity -> fall through to the next.
 const MOVIEBOX_PROFILES = [
   {
     name: "123movies",
@@ -696,7 +731,6 @@ const MOVIEBOX_PROFILES = [
     referer: (dp, id) => `https://fmoviesunblocked.net/spa/videoPlayPage/movies/${dp}?id=${id}&type=/movie/detail`,
   },
   {
-    // download only works through the site proxy on some IPs
     name: "movieboxonline-proxy",
     base: "https://movieboxonline.net",
     origin: "https://movieboxonline.net",
@@ -704,8 +738,6 @@ const MOVIEBOX_PROFILES = [
   },
 ];
 
-// /subject/play is rate limited (~1 good call per IP every couple of minutes),
-// so remember good results for a while.
 const MOVIEBOX_CACHE_TTL_MS = 10 * 60 * 1000;
 const movieBoxResultCache = new Map();
 
@@ -726,7 +758,6 @@ function findDubs(obj, depth = 0) {
   return [];
 }
 
-// Fetch one endpoint trying each identity until it returns something playable
 async function fetchMovieBoxEndpoint(kind, subjectId, detailPath, season, episode, baseHeaders, logger, label) {
   const params = new URLSearchParams({ subjectId });
   if (season !== null) {
@@ -750,10 +781,7 @@ async function fetchMovieBoxEndpoint(kind, subjectId, detailPath, season, episod
         logger.log("MOVIEBOX_ENDPOINT_OK", `${label} ${kind} via ${profile.name}`);
         return { data, referer, origin: profile.origin };
       }
-      logger.log("MOVIEBOX_ENDPOINT_EMPTY", `${label} ${kind} via ${profile.name}: no playable items`);
-    } catch (e) {
-      logger.log("MOVIEBOX_ENDPOINT_ERR", `${label} ${kind} via ${profile.name}: ${e.message}`);
-    }
+    } catch (e) {}
   }
   return { data: {}, referer: null, origin: null };
 }
@@ -765,7 +793,6 @@ async function extractMovieBox(title, mediaType = "movie", season = null, episod
 
   const cached = movieBoxResultCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
-    logger.log("MOVIEBOX_CACHE_HIT", cacheKey);
     return { ...cached.value, cached: true, debugLogs: logger.getLogs() };
   }
 
@@ -783,7 +810,6 @@ async function extractMovieBox(title, mediaType = "movie", season = null, episod
       "X-Client-Info": JSON.stringify({ timezone: "Africa/Nairobi" }),
     };
 
-    // ---- 1. Search: plain title + "<title> Hindi" so the dub subject shows up
     const searchOnce = async (keyword) => {
       try {
         const r = await fetchUrl(`${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/subject/search`, {
@@ -793,12 +819,10 @@ async function extractMovieBox(title, mediaType = "movie", season = null, episod
         });
         return unwrapData(JSON.parse(r.data))?.items || [];
       } catch (e) {
-        logger.log("MOVIEBOX_SEARCH_ERR", `${keyword}: ${e.message}`);
         return [];
       }
     };
 
-    logger.log("MOVIEBOX_SEARCH_REQ", "Searching MovieBox", { title, subjectType });
     const [plain, hindi] = await Promise.all([searchOnce(title), searchOnce(`${title} Hindi`)]);
 
     const seen = new Set();
@@ -807,12 +831,10 @@ async function extractMovieBox(title, mediaType = "movie", season = null, episod
       const id = String(it.subjectId || it.id || "");
       if (id && !seen.has(id)) { seen.add(id); items.push(it); }
     }
-    logger.log("MOVIEBOX_SEARCH_RES", `Found ${items.length} subjects (${plain.length} + ${hindi.length})`);
     if (!items.length) throw new Error("MovieBox: Search returned 0 results");
 
-    // ---- 2. Exact "Title" / "Title [Lang]" matches => language groups
     const titleMatchRegex = new RegExp(`^${escapeRegex(title)}(?:\\s+\\[([^\\]]+)\\])?$`, "i");
-    const groups = new Map(); // language -> [{subjectId, detailPath, rawTitle}]
+    const groups = new Map();
     const addToGroup = (language, entry) => {
       const lang = normalizeLanguage(language);
       if (!groups.has(lang)) groups.set(lang, []);
@@ -828,7 +850,6 @@ async function extractMovieBox(title, mediaType = "movie", season = null, episod
       addToGroup(m[1] || "Original", { subjectId: id, detailPath: item.detailPath || "", rawTitle: item.title || "" });
     }
 
-    // loose fallback so odd titles still work
     if (!groups.size) {
       const target = cleanTitleString(title);
       for (const item of items) {
@@ -846,17 +867,14 @@ async function extractMovieBox(title, mediaType = "movie", season = null, episod
       });
     }
 
-    // ---- 3. Dub discovery from the detail "dubs" array (adds Hindi etc. if search missed it)
     try {
       const anchor = (groups.get("Original") || [...groups.values()][0])[0];
       const anchorPath = await getMovieBoxDetailPath(anchor.subjectId, anchor.detailPath, logger);
       if (anchorPath) {
-        const dr = await fetchUrl(`${MOVIEBOX_BASE_URL}/wefeed-h5api-bff/detail?detailPath=${encodeURIComponent(anchorPath)}`, {
+        const dr = await fetchUrl(`${MOVIEBOX_BASE_URL}/wefeed-h5-bff/detail?detailPath=${encodeURIComponent(anchorPath)}`, {
           headers: { ...baseHeaders, "Referer": MOVIEBOX_BASE_URL }, timeout: 10000,
         });
         const dubs = findDubs(JSON.parse(dr.data || "{}"));
-        logger.log("MOVIEBOX_DUBS", `Detail returned ${dubs.length} dub/sub entries`,
-          dubs.map(d => ({ lanName: d.lanName, kind: d.kind, original: d.original, subjectId: d.subjectId })));
         for (const d of dubs) {
           if (!d || !d.subjectId) continue;
           if (d.kind === "subtitle" || d.type === 1) continue;
@@ -865,12 +883,7 @@ async function extractMovieBox(title, mediaType = "movie", season = null, episod
           });
         }
       }
-    } catch (e) {
-      logger.log("MOVIEBOX_DUBS_ERR", e.message);
-    }
-
-    logger.log("MOVIEBOX_GROUPS", `Languages: ${[...groups.keys()].join(", ")}`,
-      [...groups.entries()].map(([l, v]) => ({ language: l, subjects: v.map(x => x.subjectId) })));
+    } catch (e) {}
 
     const subtitles = [];
     const subtitleSeen = new Set();
@@ -882,7 +895,6 @@ async function extractMovieBox(title, mediaType = "movie", season = null, episod
       }
     };
 
-    // ---- 4. Every language in parallel; inside a language try candidate subjects until one yields streams
     const perLanguage = await Promise.all([...groups.entries()].map(async ([language, entries]) => {
       for (const entry of entries) {
         const out = [];
@@ -890,7 +902,6 @@ async function extractMovieBox(title, mediaType = "movie", season = null, episod
           const detailPath = await getMovieBoxDetailPath(entry.subjectId, entry.detailPath, logger);
           const label = `${language}[${entry.subjectId}]`;
 
-          // BOTH endpoints at the same time (CloudStream logic)
           const [dl, pl] = await Promise.all([
             fetchMovieBoxEndpoint("download", entry.subjectId, detailPath, effSeason, effEpisode, baseHeaders, logger, label),
             fetchMovieBoxEndpoint("play", entry.subjectId, detailPath, effSeason, effEpisode, baseHeaders, logger, label),
@@ -898,12 +909,12 @@ async function extractMovieBox(title, mediaType = "movie", season = null, episod
 
           const downloadData = dl.data;
           const playData = pl.data;
-          const refererUsed = pl.referer || dl.referer || MOVIEBOX_PLAY_FALLBACK_REFERER(detailPath, entry.subjectId);
+          const refererUsed = pl.referer || dl.referer || `https://123moviesfree.club/movies/${detailPath}?id=${entry.subjectId}&type=/movie/detail`;
           const originUsed = pl.origin || dl.origin || "https://123moviesfree.club";
-          const playbackHeaders = { "Referer": refererUsed, "Origin": originUsed, "User-Agent": DEFAULT_UA, "Accept": "*/*" };
+          const baseItemHeaders = { "Referer": refererUsed, "Origin": originUsed, "User-Agent": DEFAULT_UA, "Accept": "*/*" };
 
           const addedQualities = new Set();
-          const push = (s, resolution, kind) => {
+          const push = async (s, resolution, kind) => {
             let finalUrl = cleanVideoUrl(s.url || s.videoUrl || s.playUrl || "");
             const signCookie = s.sign_cookie || s.signCookie;
             const cookieVal = cloudfrontCookie(signCookie);
@@ -913,65 +924,61 @@ async function extractMovieBox(title, mediaType = "movie", season = null, episod
             }
             if (!finalUrl || finalUrl.includes("macdn.aoneroom.com/other/")) return;
 
-            const itemHeaders = { ...playbackHeaders };
+            const itemHeaders = { ...baseItemHeaders };
             if (cookieVal) itemHeaders["Cookie"] = cookieVal;
+
+            // Run proxy variant probing matching Python script logic
+            const proxyRes = await findWorkingProxyVariant(finalUrl, itemHeaders, PROXY_BASE, logger);
+            const verifiedHeaders = proxyRes.ok ? proxyRes.headers : itemHeaders;
+            const verifiedUrlWithHeaders = buildPipeUrl(finalUrl, verifiedHeaders);
 
             out.push({
               rawTitle: entry.rawTitle,
               subjectId: entry.subjectId,
               url: finalUrl,
-              urlWithHeaders: buildPipeUrl(finalUrl, itemHeaders),
-              headers: itemHeaders,
+              urlWithHeaders: verifiedUrlWithHeaders,
+              headers: verifiedHeaders,
+              proxy_url: proxyRes.proxy_url,
+              proxy_verified: proxyRes.ok,
+              proxy_variant: proxyRes.variant,
               resolution: kind === "dash" ? "auto" : String(resolution || "auto"),
               type: kind,
               language,
             });
           };
 
-          // 1) downloads
           for (const d of (downloadData.downloads || [])) {
             if (!d || d.vipLocked || !d.url) continue;
             const resolution = parseInt(d.resolution, 10) || 0;
             addedQualities.add(resolution);
-            push(d, resolution, "mp4");
+            await push(d, resolution, "mp4");
           }
-          // 2) play streams (skip resolutions already added)
           for (const s of (playData.streams || [])) {
             if (!s || s.vipLocked || !s.url) continue;
             const resolution = parseInt(s.resolutions, 10) || parseInt(s.resolution, 10) || 0;
             if (addedQualities.has(resolution)) continue;
             addedQualities.add(resolution);
-            push(s, resolution, "mp4");
+            await push(s, resolution, "mp4");
           }
-          // 3) DASH
           for (const d of (playData.dash || [])) {
             if (!d || d.vipLocked || !d.url) continue;
-            push(d, 0, "dash");
+            await push(d, 0, "dash");
           }
 
           addCaptions(downloadData.captions);
           addCaptions(playData.captions);
 
-          logger.log("MOVIEBOX_SUBJECT_RES", `${label}: ${out.length} streams`, {
-            downloads: (downloadData.downloads || []).length,
-            streams: (playData.streams || []).length,
-            dash: (playData.dash || []).length,
-          });
-
           if (out.length) return out;
-        } catch (e) {
-          logger.log("MOVIEBOX_SUBJECT_ERR", `${language}[${entry.subjectId}]: ${e.message}`);
-        }
+        } catch (e) {}
       }
       return [];
     }));
 
     const candidateStreams = perLanguage.flat();
     if (!candidateStreams.length) {
-      throw new Error("MovieBox: Stream sources unavailable (invalid region / rate limited - see debug logs)");
+      throw new Error("MovieBox: Stream sources unavailable (invalid region / rate limited)");
     }
 
-    // One best non-DASH stream per language (Original first, then Hindi)
     const playable = candidateStreams.filter(s => s.type !== "dash");
     const topTwoStreams = selectTopTwoStreams(playable.length ? playable : candidateStreams);
     const primaryStream = topTwoStreams[0] || candidateStreams[0];
@@ -1016,10 +1023,6 @@ async function extractMovieBox(title, mediaType = "movie", season = null, episod
   }
 }
 
-function MOVIEBOX_PLAY_FALLBACK_REFERER(detailPath, subjectId) {
-  return `https://123moviesfree.club/movies/${detailPath}?id=${subjectId}&type=/movie/detail`;
-}
-
 // ============================================================
 // MAIN HANDLER
 // ============================================================
@@ -1043,7 +1046,6 @@ module.exports = async (req, res) => {
     }
 
     const mediaType = type.toLowerCase() === "movie" ? "movie" : "tv";
-    // Movies must NOT carry season/episode (it flips MovieBox/Castle into TV mode)
     const season = mediaType === "tv" ? (s ? parseInt(s, 10) : 1) : null;
     const episode = mediaType === "tv" ? (e ? parseInt(e, 10) : 1) : null;
 
@@ -1063,7 +1065,6 @@ module.exports = async (req, res) => {
 
     const results = await Promise.all(fetchTasks);
 
-    // Priority: MovieBox (multi-audio) > Castle > Modiplay
     const priority = { moviebox: 0, castle: 1, modiplay: 2 };
     const successes = results.filter((r) => r.success).sort((a, b) => (priority[a.source] ?? 9) - (priority[b.source] ?? 9));
     const successfulResult = successes[0];
@@ -1085,7 +1086,6 @@ module.exports = async (req, res) => {
         qualities: successfulResult.qualities || [],
         audioTracks: successfulResult.audioTracks || [],
         subtitles: successfulResult.subtitles || [],
-        // every working source, so the player can fall back
         sources: successes.map((r) => ({
           source: r.source,
           videoUrl: r.videoUrl,
