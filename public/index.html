@@ -1,18 +1,4 @@
-Here is the full, final, and updated player code.
 
-I have completely overhauled the server handling logic to match your new API response.
-
-Key Changes Applied:
-
-1. MovieBox Proxy URL: The player now strictly uses the proxy_url provided by the API for MovieBox. It no longer tries to build the proxy URL manually from urlWithHeaders.
-2. Audio Tracks & Qualities: The server menu correctly parses audioTracks to create separate options for each language (e.g., Original, Hindi). The quality menu dynamically populates with the qualities array specific to the selected language.
-3. Subtitles: The API subtitles are now correctly fetched from the subtitles array for both MovieBox and Castle, converted to VTT if necessary, and injected into the player.
-4. Fallback Priority: If GitHub fails, the player now immediately attempts the API sources (MovieBox, Castle, ModiPlay) before falling back to vidy.st.
-5. Blob URL / Fragments: Added a robust check to ensure MP4s proxied through the API are handled correctly by the native video player, while HLS streams correctly use HLS.js to generate blob: URLs and load fragments.
-6. Server Menu Hiding: Fixed the event listeners to ensure the server dialog hides correctly when clicking outside or selecting a server.
-7. Loading Indicator & Smooth Seeking: The loader now correctly appears on waiting, seeking, stalled, and suspend events, and hides on playing, canplay, and seeked.
-
-```html
 <html lang="en" __gcrremoteframetoken="2f5b6c55e21b3a054ae2bcea825f300f"><head>
     <meta charset="UTF-8">
     <!-- Primary Meta Tags -->
