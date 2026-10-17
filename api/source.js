@@ -1,7 +1,7 @@
 /**
  * Triple Video Source API - Castle + Modiplay + MovieBox
  * Fixed: GZIP decompression in fetchUrl & Castle empty stream handling
- * Feature: Side-by-Side Dual Stream Extraction with Hindi Prioritization + Python Proxy Probing Logic
+ * Feature: Side-by-Side Dual Stream Extraction with Hindi Prioritization + Python Proxy Probing Logic + Modiplay Relative URL Fix
  */
 
 const https = require('https');
@@ -549,10 +549,16 @@ async function extractCastle(title, season = null, episode = null, isDebug = fal
       throw new Error(`Castle: Season ${season} Episode ${episode} is unmapped or unavailable`);
     }
 
+    const proxyRes = await findWorkingProxyVariant(videoUrl, {}, PROXY_BASE, logger);
+    const verifiedHeaders = proxyRes.ok ? proxyRes.headers : {};
+    const verifiedUrlWithHeaders = proxyRes.proxy_url;
+
     const streamObj = {
       url: videoUrl,
-      urlWithHeaders: videoUrl,
-      headers: {},
+      urlWithHeaders: verifiedUrlWithHeaders,
+      headers: verifiedHeaders,
+      proxy_url: proxyRes.proxy_url,
+      proxy_verified: proxyRes.ok,
       resolution: "auto",
       language: "Original"
     };
@@ -564,6 +570,8 @@ async function extractCastle(title, season = null, episode = null, isDebug = fal
       player1: streamObj,
       player2: null,
       videoUrl: videoUrl,
+      urlWithHeaders: verifiedUrlWithHeaders,
+      headers: verifiedHeaders,
       subtitles: videoData.subtitles || [],
       quality: "auto",
       debugLogs: logger.getLogs(),
@@ -619,30 +627,37 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
 
     let html = playerResponse.data;
     let videoUrl = "";
+    let directVideoUrl = "";
 
-    const regexList = [
-      /var\s+directSrc\s*=\s*["']([^"']+)["']/,
-      /var\s+src\s*=\s*["']([^"']+)["']/,
-      /file\s*:\s*["']([^"']+)["']/,
-      /source\s*:\s*["']([^"']+)["']/,
-      /["']file["']\s*:\s*["']([^"']+)["']/,
-      /src\s*:\s*["'](https?:\/\/[^"']+)["']/
-    ];
-
-    for (let idx = 0; idx < regexList.length; idx++) {
-      const match = html.match(regexList[idx]);
-      if (match && match[1]) {
-        videoUrl = cleanVideoUrl(match[1]);
-        break;
-      }
+    const directSrcMatch = html.match(/var\s+directSrc\s*=\s*["']([^"']+)["']/);
+    if (directSrcMatch && directSrcMatch[1]) {
+      directVideoUrl = cleanVideoUrl(directSrcMatch[1]);
     }
 
-    if (!videoUrl) throw new Error("Modiplay: Stream target missing");
+    const srcMatch = html.match(/var\s+src\s*=\s*["']([^"']+)["']/);
+    if (srcMatch && srcMatch[1]) {
+      videoUrl = cleanVideoUrl(srcMatch[1]);
+    }
+
+    let finalVideoUrl = directVideoUrl || videoUrl;
+
+    if (finalVideoUrl.startsWith('/')) {
+      const urlObj = new URL(MODIPLAY_API);
+      finalVideoUrl = `${urlObj.protocol}//${urlObj.host}${finalVideoUrl}`;
+    }
+
+    if (!finalVideoUrl) throw new Error("Modiplay: Stream target missing");
+
+    const proxyRes = await findWorkingProxyVariant(finalVideoUrl, {}, PROXY_BASE, logger);
+    const verifiedHeaders = proxyRes.ok ? proxyRes.headers : {};
+    const verifiedUrlWithHeaders = proxyRes.proxy_url;
 
     const streamObj = {
-      url: videoUrl,
-      urlWithHeaders: videoUrl,
-      headers: {},
+      url: finalVideoUrl,
+      urlWithHeaders: verifiedUrlWithHeaders,
+      headers: verifiedHeaders,
+      proxy_url: proxyRes.proxy_url,
+      proxy_verified: proxyRes.ok,
       resolution: "auto",
       language: "Original"
     };
@@ -653,7 +668,9 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
       topTwo: [streamObj],
       player1: streamObj,
       player2: null,
-      videoUrl: videoUrl,
+      videoUrl: finalVideoUrl,
+      urlWithHeaders: verifiedUrlWithHeaders,
+      headers: verifiedHeaders,
       quality: "auto",
       debugLogs: logger.getLogs(),
     };
@@ -927,7 +944,6 @@ async function extractMovieBox(title, mediaType = "movie", season = null, episod
             const itemHeaders = { ...baseItemHeaders };
             if (cookieVal) itemHeaders["Cookie"] = cookieVal;
 
-            // Run proxy variant probing matching Python script logic
             const proxyRes = await findWorkingProxyVariant(finalUrl, itemHeaders, PROXY_BASE, logger);
             const verifiedHeaders = proxyRes.ok ? proxyRes.headers : itemHeaders;
             const verifiedUrlWithHeaders = buildPipeUrl(finalUrl, verifiedHeaders);
