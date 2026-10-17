@@ -50,14 +50,20 @@ let movieBoxTokenCache = { token: null, expiresAt: 0 };
 // UTILITIES & PROXY PROBING (PYTHON PORT)
 // ============================================================
 
-function cleanVideoUrl(url) {
+function cleanVideoUrl(url, decode = true) {
   if (!url) return "";
   let cleaned = String(url)
     .replaceAll('\\/', '/')
     .replaceAll('\\', '');
-  try {
-    cleaned = decodeURIComponent(cleaned);
-  } catch (e) {}
+  
+  if (decode) {
+    try {
+      // Prevent double-decoding for proxy URLs which might contain nested encoded URLs
+      if (!cleaned.includes('stream_proxy.php?url=')) {
+        cleaned = decodeURIComponent(cleaned);
+      }
+    } catch (e) {}
+  }
   return cleaned.trim();
 }
 
@@ -158,9 +164,11 @@ function buildPipeUrl(url, headers = {}) {
   return pairs ? `${cleanedUrl}|${pairs}` : cleanedUrl;
 }
 
-function buildProxyUrl(streamUrl, headers = {}, proxyBase = PROXY_BASE) {
+function buildProxyUrl(streamUrl, headers = {}, proxyBase = PROXY_BASE, mode = null) {
   const combined = buildPipeUrl(streamUrl, headers);
-  return `${proxyBase}?url=${encodeURIComponent(combined)}`;
+  let url = `${proxyBase}?url=${encodeURIComponent(combined)}`;
+  if (mode) url += `&mode=${mode}`;
+  return url;
 }
 
 function proxyHeaderVariants(finalHeaders = {}) {
@@ -207,12 +215,12 @@ async function probeViaProxy(proxyUrl, timeout = 12000) {
   }
 }
 
-async function findWorkingProxyVariant(streamUrl, finalHeaders, proxyBase = PROXY_BASE, logger) {
+async function findWorkingProxyVariant(streamUrl, finalHeaders, proxyBase = PROXY_BASE, logger, mode = null) {
   const variants = proxyHeaderVariants(finalHeaders);
   const attempts = [];
 
   for (const { name, hdrs } of variants) {
-    const proxyUrl = buildProxyUrl(streamUrl, hdrs, proxyBase);
+    const proxyUrl = buildProxyUrl(streamUrl, hdrs, proxyBase, mode);
     const { status, upstream } = await probeViaProxy(proxyUrl);
 
     attempts.push({ variant: name, status, upstream });
@@ -235,7 +243,7 @@ async function findWorkingProxyVariant(streamUrl, finalHeaders, proxyBase = PROX
     ok: false,
     variant: null,
     headers: finalHeaders,
-    proxy_url: buildProxyUrl(streamUrl, finalHeaders, proxyBase),
+    proxy_url: buildProxyUrl(streamUrl, finalHeaders, proxyBase, mode),
     attempts,
   };
 }
@@ -549,7 +557,8 @@ async function extractCastle(title, season = null, episode = null, isDebug = fal
       throw new Error(`Castle: Season ${season} Episode ${episode} is unmapped or unavailable`);
     }
 
-    const proxyRes = await findWorkingProxyVariant(videoUrl, {}, PROXY_BASE, logger);
+    // FIX: Append &mode=master for Castle proxy
+    const proxyRes = await findWorkingProxyVariant(videoUrl, {}, PROXY_BASE, logger, "master");
     const verifiedHeaders = proxyRes.ok ? proxyRes.headers : {};
     const verifiedUrlWithHeaders = proxyRes.proxy_url;
 
@@ -629,21 +638,23 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
     let videoUrl = "";
     let directVideoUrl = "";
 
+    // FIX: Extract var src and var directSrc
+    const srcMatch = html.match(/var\s+src\s*=\s*["']([^"']+)["']/);
+    if (srcMatch && srcMatch[1]) {
+      // Pass false to avoid decoding the proxy URL, which would break nested query parameters
+      videoUrl = cleanVideoUrl(srcMatch[1], false); 
+    }
+
     const directSrcMatch = html.match(/var\s+directSrc\s*=\s*["']([^"']+)["']/);
     if (directSrcMatch && directSrcMatch[1]) {
       directVideoUrl = cleanVideoUrl(directSrcMatch[1]);
     }
 
-    const srcMatch = html.match(/var\s+src\s*=\s*["']([^"']+)["']/);
-    if (srcMatch && srcMatch[1]) {
-      videoUrl = cleanVideoUrl(srcMatch[1]);
-    }
+    // Prioritize var src as requested
+    let finalVideoUrl = videoUrl || directVideoUrl;
 
-    let finalVideoUrl = directVideoUrl || videoUrl;
-
-    if (finalVideoUrl.startsWith('/')) {
-      const urlObj = new URL(MODIPLAY_API);
-      finalVideoUrl = `${urlObj.protocol}//${urlObj.host}${finalVideoUrl}`;
+    if (finalVideoUrl && finalVideoUrl.startsWith('/')) {
+      finalVideoUrl = `${MODIPLAY_API}${finalVideoUrl}`;
     }
 
     if (!finalVideoUrl) throw new Error("Modiplay: Stream target missing");
