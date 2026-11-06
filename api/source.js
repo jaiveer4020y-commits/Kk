@@ -21,7 +21,7 @@ const CINEMAOS_API = "https://embed.reelsdownload.online/api/cinemaos-extract";
 const CINEMAOS_BASE = "https://embed.reelsdownload.online";
 
 const MOVIEBOX_REFERER = "https://movieboxonline.net/";
-const PROXY_BASE = "https://proxyhub-kappa.vercel.app/api/proxy";
+const PROXY_BASE = "https://nameless-sea-60f9.jaiveer55555500.workers.dev";
 
 const EXTRA_HEADERS = {
   "Referer": MOVIEBOX_REFERER,
