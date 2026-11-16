@@ -1,7 +1,6 @@
 /**
  * Quad Video Source API - Castle + Modiplay + MovieBox + CinemaOS + Bingr
- * Bingr transport uses cloudscraper to survive Cloudflare bot checks.
- * Bingr cascade & parsing match Indflix commit 9484d167.
+ * Fixed for Vercel: Removed cloudscraper, routed Bingr via worker proxy, optimized timeouts.
  */
 
 const https = require("https");
@@ -9,7 +8,6 @@ const http = require("http");
 const zlib = require("zlib");
 const { URL } = require("url");
 const crypto = require("crypto");
-const cloudscraper = require("cloudscraper"); // npm i cloudscraper
 
 // ============================================================
 // CONFIGURATION
@@ -30,16 +28,6 @@ const BINGR_SRVS_MULTI = ["s40", "s70", "s62", "s63"];
 
 const MOVIEBOX_REFERER = "https://movieboxonline.net/";
 const PROXY_BASE = "https://nameless-sea-60f9.jaiveer55555500.workers.dev";
-
-const EXTRA_HEADERS = {
-  "Referer": MOVIEBOX_REFERER,
-  "Origin": "https://movieboxonline.net",
-  "Accept": "*/*",
-  "Accept-Language": "en-US,en;q=0.5",
-  "Connection": "keep-alive",
-};
-
-const PROBE_ONLY_HEADERS = { "Range": "bytes=0-1" };
 
 const CASTLE_CONFIG = {
   channel: "IndiaA", clientType: "1", lang: "en-US",
@@ -262,50 +250,9 @@ function selectTopTwoStreams(streams) {
 }
 
 // ============================================================
-// BINGR API — cloudscraper transport + Indflix 9484d167 logic
+// BINGR API — Proxied via Worker, native fetch, optimized timeout
 // ============================================================
 
-/**
- * Cloudscraper-backed fetch for Bingr.
- * Solves Cloudflare's JS challenge and attaches cf_clearance cookie.
- */
-async function bingrFetch(url, options = {}, logger) {
-  const headers = {
-    "User-Agent": DEFAULT_UA,
-    "Accept-Language": "en-US,en;q=0.9",
-    ...options.headers,
-  };
-
-  return new Promise((resolve, reject) => {
-    const req = {
-      uri: url,
-      method: options.method || "GET",
-      headers,
-      timeout: options.timeout || 6000,
-    };
-    if (options.body) {
-      req.body = typeof options.body === "object" ? JSON.stringify(options.body) : options.body;
-      req.headers = { ...req.headers, "Content-Type": "application/json" };
-    }
-
-    cloudscraper(req, (err, res, body) => {
-      if (err) {
-        const msg = err.message || String(err);
-        logger.log("BINGR_CS_FAIL", `${url.substring(0, 70)}: ${msg.substring(0, 80)}`);
-        return reject(err);
-      }
-      if (res.statusCode >= 400) {
-        const msg = `HTTP ${res.statusCode}: ${String(body).substring(0, 120)}`;
-        logger.log("BINGR_CS_HTTP", `${url.substring(0, 70)}: ${msg}`);
-        return reject(new Error(msg));
-      }
-      logger.log("BINGR_CS_OK", `${url.substring(0, 70)}: HTTP ${res.statusCode}`);
-      resolve(body);
-    });
-  });
-}
-
-/** Mirrors Kotlin `heightHintOf`. */
 function heightHintOf(text) {
   const str = String(text || "");
   const m = str.match(/(\d{3,4})/);
@@ -319,7 +266,6 @@ function heightHintOf(text) {
   return 0;
 }
 
-/** IndStream body: season/episode nested inside `query`. */
 function bingrBodyIndStream(srv, type, id, title, year, season, episode) {
   const query = { title: title || "", year: year ? String(year) : "" };
   if (type === "tv") {
@@ -329,7 +275,6 @@ function bingrBodyIndStream(srv, type, id, title, year, season, episode) {
   return { srv, t: type === "tv" ? "tv" : "movie", id: String(id), query };
 }
 
-/** Multimovies body: season/episode as top-level fields. */
 function bingrBodyMulti(srv, type, id, title, year, season, episode) {
   const body = {
     srv,
@@ -380,8 +325,29 @@ function bingrSubtitles(jsonText) {
 }
 
 /**
- * Run one Bingr cascade — mirrors `resolveBingr` in StreamEngine.kt.
+ * Fetches Bingr via Worker Proxy to bypass Cloudflare.
+ * Vercel doesn't have native binaries to solve Cloudflare, and cloudscraper crashes it.
  */
+async function bingrFetch(url, options = {}, logger) {
+  // Route API requests through the worker proxy
+  const combinedUrl = buildPipeUrl(url, options.headers || {});
+  const proxyUrl = `${PROXY_BASE}?url=${encodeURIComponent(combinedUrl)}`;
+
+  try {
+    const res = await fetchUrl(proxyUrl, {
+      method: options.method || "GET",
+      headers: { "Content-Type": "application/json" }, // Worker handles actual headers
+      body: options.body,
+      timeout: options.timeout || 4000,
+    });
+    logger.log("BINGR_PROXY_OK", `${url.substring(0, 70)}: HTTP ${res.statusCode}`);
+    return res.data;
+  } catch (e) {
+    logger.log("BINGR_PROXY_FAIL", `${url.substring(0, 70)}: ${e.message.substring(0, 80)}`);
+    throw e;
+  }
+}
+
 async function bingrRunCascade(title, tmdbId, year, mediaType, season, episode, logger, opts) {
   const { srvs, bodyFn, maxSources, perRequestTimeout, totalDeadlineMs, useSpecialS40Get } = opts;
   const type = mediaType === "tv" ? "tv" : "movie";
@@ -471,13 +437,13 @@ async function extractBingr(title, tmdbId, year, mediaType = "movie", season = n
       throw new Error("Bingr: Invalid TMDB ID");
     }
 
-    // Primary: IndStream cascade
+    // Primary: IndStream cascade (Reduced total deadline to 6s to fit Vercel)
     let cascade = await bingrRunCascade(title, tmdbId, year, mediaType, season, episode, logger, {
       srvs: BINGR_SRVS,
       bodyFn: bingrBodyIndStream,
       maxSources: 6,
-      perRequestTimeout: 6000,
-      totalDeadlineMs: 22000,
+      perRequestTimeout: 3000,
+      totalDeadlineMs: 6000,
       useSpecialS40Get: true,
     });
 
@@ -488,8 +454,8 @@ async function extractBingr(title, tmdbId, year, mediaType = "movie", season = n
         srvs: BINGR_SRVS_MULTI,
         bodyFn: bingrBodyMulti,
         maxSources: 4,
-        perRequestTimeout: 4000,
-        totalDeadlineMs: 18000,
+        perRequestTimeout: 3000,
+        totalDeadlineMs: 4000,
         useSpecialS40Get: false,
       });
     }
@@ -523,7 +489,6 @@ async function extractBingr(title, tmdbId, year, mediaType = "movie", season = n
       });
     }
 
-    // Order: best per language, Original → Hindi → others
     const bestByLang = new Map();
     for (const st of streamList) {
       const cur = bestByLang.get(st.language);
@@ -539,7 +504,6 @@ async function extractBingr(title, tmdbId, year, mediaType = "movie", season = n
     const topTwo = ordered.slice(0, 2);
     const primary = topTwo[0] || streamList[0];
 
-    // Audio tracks (one per language)
     const audioTracks = [];
     const seenLang = new Set();
     for (const st of streamList) {
