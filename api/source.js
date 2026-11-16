@@ -1,6 +1,7 @@
 /**
  * Quad Video Source API - Castle + Modiplay + MovieBox + CinemaOS + Bingr
- * Bingr logic matches Indflix commit 9484d167 (IndStream primary, Multimovies fallback)
+ * Bingr transport uses cloudscraper to survive Cloudflare bot checks.
+ * Bingr cascade & parsing match Indflix commit 9484d167.
  */
 
 const https = require("https");
@@ -8,6 +9,7 @@ const http = require("http");
 const zlib = require("zlib");
 const { URL } = require("url");
 const crypto = require("crypto");
+const cloudscraper = require("cloudscraper"); // npm i cloudscraper
 
 // ============================================================
 // CONFIGURATION
@@ -23,15 +25,8 @@ const CINEMAOS_BASE = "https://embed.reelsdownload.online";
 // ---- Bingr ----
 const BINGR_API = "https://api.bingr.one/api/stream";
 const BINGR_ORIGIN = "https://bingr.one";
-// IndStream primary cascade (exact order from commit 9484d167)
 const BINGR_SRVS = ["s40", "s70", "s80", "s81", "s62", "s63", "s30", "s60", "s61", "s31", "s3"];
-// Multimovies fallback cascade
 const BINGR_SRVS_MULTI = ["s40", "s70", "s62", "s63"];
-// Fetch strategy: "direct" | "proxy" | "both"
-// Bingr's API sits behind Cloudflare, so "proxy" is the practical default.
-// Set BINGR_FETCH_MODE=direct if your environment can reach api.bingr.one directly,
-// or BINGR_FETCH_MODE=both to race both paths in parallel.
-const BINGR_FETCH_MODE = process.env.BINGR_FETCH_MODE || "proxy";
 
 const MOVIEBOX_REFERER = "https://movieboxonline.net/";
 const PROXY_BASE = "https://nameless-sea-60f9.jaiveer55555500.workers.dev";
@@ -267,10 +262,50 @@ function selectTopTwoStreams(streams) {
 }
 
 // ============================================================
-// BINGR API — EXACT LOGIC from Indflix commit 9484d167
+// BINGR API — cloudscraper transport + Indflix 9484d167 logic
 // ============================================================
 
-/** Mirrors Kotlin `heightHintOf`: parses digits, then falls back to label keywords. */
+/**
+ * Cloudscraper-backed fetch for Bingr.
+ * Solves Cloudflare's JS challenge and attaches cf_clearance cookie.
+ */
+async function bingrFetch(url, options = {}, logger) {
+  const headers = {
+    "User-Agent": DEFAULT_UA,
+    "Accept-Language": "en-US,en;q=0.9",
+    ...options.headers,
+  };
+
+  return new Promise((resolve, reject) => {
+    const req = {
+      uri: url,
+      method: options.method || "GET",
+      headers,
+      timeout: options.timeout || 6000,
+    };
+    if (options.body) {
+      req.body = typeof options.body === "object" ? JSON.stringify(options.body) : options.body;
+      req.headers = { ...req.headers, "Content-Type": "application/json" };
+    }
+
+    cloudscraper(req, (err, res, body) => {
+      if (err) {
+        const msg = err.message || String(err);
+        logger.log("BINGR_CS_FAIL", `${url.substring(0, 70)}: ${msg.substring(0, 80)}`);
+        return reject(err);
+      }
+      if (res.statusCode >= 400) {
+        const msg = `HTTP ${res.statusCode}: ${String(body).substring(0, 120)}`;
+        logger.log("BINGR_CS_HTTP", `${url.substring(0, 70)}: ${msg}`);
+        return reject(new Error(msg));
+      }
+      logger.log("BINGR_CS_OK", `${url.substring(0, 70)}: HTTP ${res.statusCode}`);
+      resolve(body);
+    });
+  });
+}
+
+/** Mirrors Kotlin `heightHintOf`. */
 function heightHintOf(text) {
   const str = String(text || "");
   const m = str.match(/(\d{3,4})/);
@@ -284,28 +319,17 @@ function heightHintOf(text) {
   return 0;
 }
 
-/**
- * IndStream body: season/episode nested inside `query`.
- * Mirrors `bingrBody` in StreamEngine.kt.
- */
+/** IndStream body: season/episode nested inside `query`. */
 function bingrBodyIndStream(srv, type, id, title, year, season, episode) {
   const query = { title: title || "", year: year ? String(year) : "" };
   if (type === "tv") {
     query.season = season ?? 1;
     query.episode = episode ?? 1;
   }
-  return {
-    srv,
-    t: type === "tv" ? "tv" : "movie",
-    id: String(id),
-    query,
-  };
+  return { srv, t: type === "tv" ? "tv" : "movie", id: String(id), query };
 }
 
-/**
- * Multimovies body: season/episode as top-level fields.
- * Mirrors `bingrBody` in ExternalSources.kt.
- */
+/** Multimovies body: season/episode as top-level fields. */
 function bingrBodyMulti(srv, type, id, title, year, season, episode) {
   const body = {
     srv,
@@ -320,7 +344,6 @@ function bingrBodyMulti(srv, type, id, title, year, season, episode) {
   return body;
 }
 
-/** Parse `sources` from a Bingr JSON response. */
 function bingrSources(jsonText) {
   try {
     const root = JSON.parse(jsonText);
@@ -338,12 +361,9 @@ function bingrSources(jsonText) {
       });
     }
     return out;
-  } catch (e) {
-    return [];
-  }
+  } catch (e) { return []; }
 }
 
-/** Parse `subtitles` from a Bingr JSON response (`url` or `file`, `lang` or `label`). */
 function bingrSubtitles(jsonText) {
   try {
     const root = JSON.parse(jsonText);
@@ -353,57 +373,14 @@ function bingrSubtitles(jsonText) {
       if (!o) continue;
       const url = String(o.url || o.file || "");
       if (!url.startsWith("http")) continue;
-      const language = String(o.lang || o.label || "sub");
-      out.push({ url, language });
+      out.push({ url, language: String(o.lang || o.label || "sub") });
     }
     return out;
-  } catch (e) {
-    return [];
-  }
+  } catch (e) { return []; }
 }
 
 /**
- * Bingr fetch helper.
- * Default = route through worker proxy (Bingr is behind Cloudflare).
- * Set BINGR_FETCH_MODE=direct to bypass proxy, or =both to race.
- */
-async function bingrFetch(url, options, logger) {
-  const timeout = options.timeout || 6000;
-
-  const direct = () => fetchUrl(url, { ...options, timeout }).then(r => r.data);
-  const viaProxy = () => {
-    const proxyUrl = buildProxyUrl(url, options.headers || {});
-    return fetchUrl(proxyUrl, {
-      method: options.method || "GET",
-      headers: options.headers || {},
-      body: options.body,
-      timeout,
-    }).then(r => r.data);
-  };
-
-  if (BINGR_FETCH_MODE === "direct") {
-    return await direct();
-  }
-  if (BINGR_FETCH_MODE === "proxy") {
-    try {
-      return await viaProxy();
-    } catch (e) {
-      logger.log("BINGR_PROXY_FAIL", `${url.substring(0, 70)}: ${e.message.substring(0, 80)}`);
-      throw e;
-    }
-  }
-  // "both" — race direct and proxy, return first success
-  try {
-    return await Promise.any([direct(), viaProxy()]);
-  } catch (e) {
-    logger.log("BINGR_BOTH_FAIL", `${url.substring(0, 70)}: ${e.message.substring(0, 80)}`);
-    throw e;
-  }
-}
-
-/**
- * Run one Bingr cascade.
- * Mirrors `resolveBingr` in StreamEngine.kt.
+ * Run one Bingr cascade — mirrors `resolveBingr` in StreamEngine.kt.
  */
 async function bingrRunCascade(title, tmdbId, year, mediaType, season, episode, logger, opts) {
   const { srvs, bodyFn, maxSources, perRequestTimeout, totalDeadlineMs, useSpecialS40Get } = opts;
@@ -418,7 +395,6 @@ async function bingrRunCascade(title, tmdbId, year, mediaType, season, episode, 
     "Referer": BINGR_ORIGIN + "/",
     "User-Agent": DEFAULT_UA,
   };
-  // Matches okHeaders("https://bingr.one/") — no Origin, no Content-Type
   const getHeaders = {
     "Referer": BINGR_ORIGIN + "/",
     "User-Agent": DEFAULT_UA,
@@ -453,7 +429,6 @@ async function bingrRunCascade(title, tmdbId, year, mediaType, season, episode, 
     }
 
     if (!text) continue;
-
     try { subtitlePayloads.push(JSON.parse(text)); } catch (e) {}
 
     const sources = bingrSources(text);
@@ -475,7 +450,6 @@ async function bingrRunCascade(title, tmdbId, year, mediaType, season, episode, 
     logger.log("BINGR_SERVER", `${srv}: ${sources.length} sources, total ${out.size}/${maxSources}`);
   }
 
-  // Collect subtitles from every successful response
   const subtitles = [];
   const subSeen = new Set();
   for (const payload of subtitlePayloads) {
@@ -507,7 +481,7 @@ async function extractBingr(title, tmdbId, year, mediaType = "movie", season = n
       useSpecialS40Get: true,
     });
 
-    // Fallback: Multimovies format (different body shape, 4 servers, 4s per req)
+    // Fallback: Multimovies format
     if (cascade.sources.length === 0) {
       logger.log("BINGR_FALLBACK", "IndStream format yielded 0, trying Multimovies format");
       cascade = await bingrRunCascade(title, tmdbId, year, mediaType, season, episode, logger, {
