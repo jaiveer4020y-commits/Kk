@@ -1,6 +1,6 @@
 /**
  * Quad Video Source API - Castle + Modiplay + MovieBox + CinemaOS + Bingr
- * Fixes: Modiplay src extraction & proxy, MovieBox audioTrack proxy_url, CinemaOS DASH, Bingr integration
+ * Bingr logic matches Indflix commit 9484d167 (IndStream primary, Multimovies fallback)
  */
 
 const https = require("https");
@@ -19,8 +19,19 @@ const MOVIEBOX_BASE_URL = "https://h5-api.aoneroom.com";
 const MOVIEBOX_H5_WEB = "https://h5.aoneroom.com";
 const CINEMAOS_API = "https://embed.reelsdownload.online/api/cinemaos-extract";
 const CINEMAOS_BASE = "https://embed.reelsdownload.online";
+
+// ---- Bingr ----
 const BINGR_API = "https://api.bingr.one/api/stream";
 const BINGR_ORIGIN = "https://bingr.one";
+// IndStream primary cascade (exact order from commit 9484d167)
+const BINGR_SRVS = ["s40", "s70", "s80", "s81", "s62", "s63", "s30", "s60", "s61", "s31", "s3"];
+// Multimovies fallback cascade
+const BINGR_SRVS_MULTI = ["s40", "s70", "s62", "s63"];
+// Fetch strategy: "direct" | "proxy" | "both"
+// Bingr's API sits behind Cloudflare, so "proxy" is the practical default.
+// Set BINGR_FETCH_MODE=direct if your environment can reach api.bingr.one directly,
+// or BINGR_FETCH_MODE=both to race both paths in parallel.
+const BINGR_FETCH_MODE = process.env.BINGR_FETCH_MODE || "proxy";
 
 const MOVIEBOX_REFERER = "https://movieboxonline.net/";
 const PROXY_BASE = "https://nameless-sea-60f9.jaiveer55555500.workers.dev";
@@ -43,18 +54,10 @@ const CASTLE_CONFIG = {
 
 const DEFAULT_UA = "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36";
 
-// Bingr server cascade (IndStream-style)
-const BINGR_SRVS = [
-  "s40", "s70", "s80", "s81", "s62", "s63", "s30", "s60", "s61", "s31", "s3"
-];
-
-// Multimovies-style server subset (fallback)
-const BINGR_SRVS_MULTI = ["s40", "s70", "s62", "s63"];
-
 let movieBoxTokenCache = { token: null, expiresAt: 0 };
 
 // ============================================================
-// UTILITIES (unchanged from original)
+// UTILITIES
 // ============================================================
 
 function cleanVideoUrl(url, decode = true) {
@@ -264,17 +267,29 @@ function selectTopTwoStreams(streams) {
 }
 
 // ============================================================
-// BINGR API — NEW
+// BINGR API — EXACT LOGIC from Indflix commit 9484d167
 // ============================================================
 
+/** Mirrors Kotlin `heightHintOf`: parses digits, then falls back to label keywords. */
+function heightHintOf(text) {
+  const str = String(text || "");
+  const m = str.match(/(\d{3,4})/);
+  if (m) {
+    const n = parseInt(m[1], 10);
+    if (Number.isFinite(n)) return n;
+  }
+  const l = str.toLowerCase();
+  if (l.includes("4k") || l.includes("2160")) return 2160;
+  if (l.includes("1440")) return 1440;
+  return 0;
+}
+
 /**
- * Build the request body for Bingr's /api/stream endpoint.
- * Matches IndStream's format: season/episode nested inside `query`.
+ * IndStream body: season/episode nested inside `query`.
+ * Mirrors `bingrBody` in StreamEngine.kt.
  */
-function bingrBody(srv, type, id, title, year, season, episode) {
-  const query = {};
-  query.title = title || "";
-  query.year = year ? String(year) : "";
+function bingrBodyIndStream(srv, type, id, title, year, season, episode) {
+  const query = { title: title || "", year: year ? String(year) : "" };
   if (type === "tv") {
     query.season = season ?? 1;
     query.episode = episode ?? 1;
@@ -288,51 +303,193 @@ function bingrBody(srv, type, id, title, year, season, episode) {
 }
 
 /**
- * Parse Bingr's JSON response into an array of source objects.
- * Returns entries with url, quality, label, language.
+ * Multimovies body: season/episode as top-level fields.
+ * Mirrors `bingrBody` in ExternalSources.kt.
  */
+function bingrBodyMulti(srv, type, id, title, year, season, episode) {
+  const body = {
+    srv,
+    t: type === "tv" ? "tv" : "movie",
+    id: String(id),
+    query: { title: title || "", year: year ? String(year) : "" },
+  };
+  if (type === "tv") {
+    body.season = season ?? 1;
+    body.episode = episode ?? 1;
+  }
+  return body;
+}
+
+/** Parse `sources` from a Bingr JSON response. */
 function bingrSources(jsonText) {
   try {
     const root = JSON.parse(jsonText);
     if (!root || !Array.isArray(root.sources)) return [];
-    return root.sources
-      .filter(o => o && typeof o.url === "string" && o.url.startsWith("http"))
-      .map(o => ({
-        url: o.url,
-        quality: o.quality || "",
-        label: o.label || "",
-        language: o.language || "",
-      }));
+    const out = [];
+    for (const o of root.sources) {
+      if (!o) continue;
+      const url = typeof o.url === "string" ? o.url : "";
+      if (!url.startsWith("http")) continue;
+      out.push({
+        url,
+        quality: String(o.quality || ""),
+        label: String(o.label || ""),
+        language: String(o.language || ""),
+      });
+    }
+    return out;
   } catch (e) {
     return [];
   }
 }
 
-/**
- * Extract subtitles from a Bingr response.
- * Bingr returns subtitles as an array with url/file and lang/label.
- */
+/** Parse `subtitles` from a Bingr JSON response (`url` or `file`, `lang` or `label`). */
 function bingrSubtitles(jsonText) {
   try {
     const root = JSON.parse(jsonText);
     if (!root || !Array.isArray(root.subtitles)) return [];
-    return root.subtitles
-      .filter(o => o && (o.url || o.file))
-      .map(o => ({
-        url: o.url || o.file,
-        language: o.lang || o.label || "Unknown",
-      }))
-      .filter(s => s.url && s.url.startsWith("http"));
+    const out = [];
+    for (const o of root.subtitles) {
+      if (!o) continue;
+      const url = String(o.url || o.file || "");
+      if (!url.startsWith("http")) continue;
+      const language = String(o.lang || o.label || "sub");
+      out.push({ url, language });
+    }
+    return out;
   } catch (e) {
     return [];
   }
 }
 
 /**
- * Main Bingr extractor.
- * Uses a cascade of server IDs (s40, s70, ...) and stops after 6 unique sources
- * or a 22-second deadline. For TV, s40 uses the special /aphelion-tv/ GET endpoint.
+ * Bingr fetch helper.
+ * Default = route through worker proxy (Bingr is behind Cloudflare).
+ * Set BINGR_FETCH_MODE=direct to bypass proxy, or =both to race.
  */
+async function bingrFetch(url, options, logger) {
+  const timeout = options.timeout || 6000;
+
+  const direct = () => fetchUrl(url, { ...options, timeout }).then(r => r.data);
+  const viaProxy = () => {
+    const proxyUrl = buildProxyUrl(url, options.headers || {});
+    return fetchUrl(proxyUrl, {
+      method: options.method || "GET",
+      headers: options.headers || {},
+      body: options.body,
+      timeout,
+    }).then(r => r.data);
+  };
+
+  if (BINGR_FETCH_MODE === "direct") {
+    return await direct();
+  }
+  if (BINGR_FETCH_MODE === "proxy") {
+    try {
+      return await viaProxy();
+    } catch (e) {
+      logger.log("BINGR_PROXY_FAIL", `${url.substring(0, 70)}: ${e.message.substring(0, 80)}`);
+      throw e;
+    }
+  }
+  // "both" — race direct and proxy, return first success
+  try {
+    return await Promise.any([direct(), viaProxy()]);
+  } catch (e) {
+    logger.log("BINGR_BOTH_FAIL", `${url.substring(0, 70)}: ${e.message.substring(0, 80)}`);
+    throw e;
+  }
+}
+
+/**
+ * Run one Bingr cascade.
+ * Mirrors `resolveBingr` in StreamEngine.kt.
+ */
+async function bingrRunCascade(title, tmdbId, year, mediaType, season, episode, logger, opts) {
+  const { srvs, bodyFn, maxSources, perRequestTimeout, totalDeadlineMs, useSpecialS40Get } = opts;
+  const type = mediaType === "tv" ? "tv" : "movie";
+  const id = String(tmdbId);
+  const seasonNum = type === "tv" ? (season ?? 1) : null;
+  const episodeNum = type === "tv" ? (episode ?? 1) : null;
+
+  const postHeaders = {
+    "Content-Type": "application/json",
+    "Origin": BINGR_ORIGIN,
+    "Referer": BINGR_ORIGIN + "/",
+    "User-Agent": DEFAULT_UA,
+  };
+  // Matches okHeaders("https://bingr.one/") — no Origin, no Content-Type
+  const getHeaders = {
+    "Referer": BINGR_ORIGIN + "/",
+    "User-Agent": DEFAULT_UA,
+    "Accept": "*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+  };
+
+  const out = new Map();
+  const subtitlePayloads = [];
+  const deadline = Date.now() + totalDeadlineMs;
+
+  for (const srv of srvs) {
+    if (out.size >= maxSources || Date.now() > deadline) break;
+
+    let text = null;
+    try {
+      if (useSpecialS40Get && srv === "s40" && type === "tv") {
+        const getUrl = `${BINGR_API}/aphelion-tv/${id}/${seasonNum}/${episodeNum}`;
+        text = await bingrFetch(getUrl, { headers: getHeaders, timeout: perRequestTimeout }, logger);
+      } else {
+        const body = bodyFn(srv, type, id, title, year, seasonNum, episodeNum);
+        text = await bingrFetch(BINGR_API, {
+          method: "POST",
+          headers: postHeaders,
+          body,
+          timeout: perRequestTimeout,
+        }, logger);
+      }
+    } catch (e) {
+      logger.log("BINGR_SERVER_FAIL", `${srv}: ${e.message.substring(0, 80)}`);
+      continue;
+    }
+
+    if (!text) continue;
+
+    try { subtitlePayloads.push(JSON.parse(text)); } catch (e) {}
+
+    const sources = bingrSources(text);
+    for (const s of sources) {
+      if (out.has(s.url)) continue;
+      const isDash = s.url.toLowerCase().includes(".mpd");
+      const isM3u8 = s.url.toLowerCase().includes(".m3u8");
+      const adaptive = isM3u8 || isDash;
+      const qualityText = s.quality || s.label || "auto";
+      out.set(s.url, {
+        url: s.url,
+        quality: qualityText,
+        qualityHint: heightHintOf(qualityText),
+        language: s.language || "Original",
+        isAdaptive: adaptive,
+        isDash,
+      });
+    }
+    logger.log("BINGR_SERVER", `${srv}: ${sources.length} sources, total ${out.size}/${maxSources}`);
+  }
+
+  // Collect subtitles from every successful response
+  const subtitles = [];
+  const subSeen = new Set();
+  for (const payload of subtitlePayloads) {
+    const subs = bingrSubtitles(JSON.stringify(payload));
+    for (const s of subs) {
+      if (subSeen.has(s.url)) continue;
+      subSeen.add(s.url);
+      subtitles.push(s);
+    }
+  }
+
+  return { sources: [...out.values()], subtitles };
+}
+
 async function extractBingr(title, tmdbId, year, mediaType = "movie", season = null, episode = null, isDebug = false) {
   const logger = createLogger(isDebug);
   try {
@@ -340,153 +497,75 @@ async function extractBingr(title, tmdbId, year, mediaType = "movie", season = n
       throw new Error("Bingr: Invalid TMDB ID");
     }
 
-    const type = mediaType === "tv" ? "tv" : "movie";
-    const seasonNum = type === "tv" ? (season ?? 1) : null;
-    const episodeNum = type === "tv" ? (episode ?? 1) : null;
+    // Primary: IndStream cascade
+    let cascade = await bingrRunCascade(title, tmdbId, year, mediaType, season, episode, logger, {
+      srvs: BINGR_SRVS,
+      bodyFn: bingrBodyIndStream,
+      maxSources: 6,
+      perRequestTimeout: 6000,
+      totalDeadlineMs: 22000,
+      useSpecialS40Get: true,
+    });
 
-    const postHeaders = {
-      "Content-Type": "application/json",
-      "Origin": BINGR_ORIGIN,
-      "Referer": BINGR_ORIGIN + "/",
-      "User-Agent": DEFAULT_UA,
-    };
-
-    const id = String(tmdbId);
-    const out = new Map(); // url -> stream info
-    const subtitlePayloads = [];
-    const deadline = Date.now() + 22_000;
-
-    // ---- Cascade ----
-    for (const srv of BINGR_SRVS) {
-      if (out.size >= 6 || Date.now() > deadline) break;
-
-      let text = null;
-      try {
-        if (srv === "s40" && type === "tv") {
-          // Special GET endpoint for TV s40
-          const getUrl = `${BINGR_API}/aphelion-tv/${id}/${seasonNum}/${episodeNum}`;
-          const res = await fetchUrl(getUrl, {
-            headers: { ...postHeaders, "Accept": "application/json" },
-            timeout: 6000,
-          });
-          text = res.data;
-        } else {
-          const body = bingrBody(srv, type, id, title, year, seasonNum, episodeNum);
-          const res = await fetchUrl(BINGR_API, {
-            method: "POST",
-            headers: postHeaders,
-            body,
-            timeout: 6000,
-          });
-          text = res.data;
-        }
-      } catch (e) {
-        logger.log("BINGR_SERVER_FAIL", `${srv}: ${e.message.substring(0, 80)}`);
-        continue;
-      }
-
-      if (!text) continue;
-
-      // Collect subtitles from every successful response
-      try {
-        subtitlePayloads.push(JSON.parse(text));
-      } catch (e) {}
-
-      const sources = bingrSources(text);
-      for (const s of sources) {
-        if (out.has(s.url)) continue;
-        const isDash = s.url.includes(".mpd");
-        const isM3u8 = s.url.includes(".m3u8");
-        const adaptive = isM3u8 || isDash;
-        out.set(s.url, {
-          url: s.url,
-          quality: s.quality || s.label || "auto",
-          language: s.language || "Original",
-          isAdaptive: adaptive,
-          isDash,
-        });
-      }
-
-      logger.log("BINGR_SERVER", `${srv}: ${sources.length} sources, total ${out.size}`);
+    // Fallback: Multimovies format (different body shape, 4 servers, 4s per req)
+    if (cascade.sources.length === 0) {
+      logger.log("BINGR_FALLBACK", "IndStream format yielded 0, trying Multimovies format");
+      cascade = await bingrRunCascade(title, tmdbId, year, mediaType, season, episode, logger, {
+        srvs: BINGR_SRVS_MULTI,
+        bodyFn: bingrBodyMulti,
+        maxSources: 4,
+        perRequestTimeout: 4000,
+        totalDeadlineMs: 18000,
+        useSpecialS40Get: false,
+      });
     }
 
-    if (out.size === 0) {
+    if (cascade.sources.length === 0) {
       throw new Error("Bingr: No sources found from any server");
     }
 
-    // ---- Subtitles ----
-    const subtitles = [];
-    const subSeen = new Set();
-    for (const payload of subtitlePayloads) {
-      const subs = bingrSubtitles(JSON.stringify(payload));
-      for (const s of subs) {
-        if (subSeen.has(s.url)) continue;
-        subSeen.add(s.url);
-        subtitles.push({
-          url: s.url,
-          language: s.language || "Unknown",
-        });
-      }
-    }
-
-    // ---- Build stream objects with proxy probing ----
+    // Build streams and probe playback via worker proxy
     const streamList = [];
-    for (const s of out.values()) {
-      const headers = {
+    for (const s of cascade.sources) {
+      const playbackHeaders = {
         "Referer": BINGR_ORIGIN + "/",
         "Origin": BINGR_ORIGIN,
         "User-Agent": DEFAULT_UA,
         "Accept": "*/*",
       };
-
-      let proxyRes;
-      if (s.isAdaptive) {
-        // For HLS/DASH we use mode=master so relative segments are rewritten
-        proxyRes = await findWorkingProxyVariant(s.url, headers, PROXY_BASE, logger, "master");
-      } else {
-        proxyRes = await findWorkingProxyVariant(s.url, headers, PROXY_BASE, logger);
-      }
-
-      const verifiedHeaders = proxyRes.ok ? proxyRes.headers : headers;
-      const verifiedUrlWithHeaders = proxyRes.proxy_url;
-
+      const mode = s.isAdaptive ? "master" : null;
+      const proxyRes = await findWorkingProxyVariant(s.url, playbackHeaders, PROXY_BASE, logger, mode);
+      const verifiedHeaders = proxyRes.ok ? proxyRes.headers : playbackHeaders;
       streamList.push({
         url: s.url,
-        urlWithHeaders: verifiedUrlWithHeaders,
+        urlWithHeaders: proxyRes.proxy_url,
         headers: verifiedHeaders,
         proxy_url: proxyRes.proxy_url,
         proxy_verified: proxyRes.ok,
         resolution: s.quality,
+        qualityHint: s.qualityHint,
         language: s.language,
         type: s.isDash ? "dash" : s.isAdaptive ? "hls" : "mp4",
       });
     }
 
-    // ---- Select top two (best per language, Original first) ----
+    // Order: best per language, Original → Hindi → others
     const bestByLang = new Map();
     for (const st of streamList) {
-      const lang = st.language;
-      const cur = bestByLang.get(lang);
-      if (!cur || resNum(st.resolution) > resNum(cur.resolution)) {
-        bestByLang.set(lang, st);
-      }
+      const cur = bestByLang.get(st.language);
+      if (!cur || st.qualityHint > cur.qualityHint) bestByLang.set(st.language, st);
     }
-
     const rank = (lang) => {
       const l = String(lang).toLowerCase();
       if (l === "original") return 0;
       if (l.includes("hindi")) return 1;
       return 2;
     };
-
-    const ordered = [...bestByLang.entries()]
-      .sort((a, b) => rank(a[0]) - rank(b[0]))
-      .map(([, v]) => v);
-
+    const ordered = [...bestByLang.entries()].sort((a, b) => rank(a[0]) - rank(b[0])).map(([, v]) => v);
     const topTwo = ordered.slice(0, 2);
     const primary = topTwo[0] || streamList[0];
 
-    // ---- Audio tracks (one per language) ----
+    // Audio tracks (one per language)
     const audioTracks = [];
     const seenLang = new Set();
     for (const st of streamList) {
@@ -517,7 +596,7 @@ async function extractBingr(title, tmdbId, year, mediaType = "movie", season = n
       quality: primary.resolution,
       qualities: streamList,
       audioTracks,
-      subtitles,
+      subtitles: cascade.subtitles,
       debugLogs: logger.getLogs(),
     };
   } catch (error) {
@@ -676,22 +755,17 @@ async function extractCastle(title, season = null, episode = null, isDebug = fal
 
 function extractModiplaySrcVar(html) {
   const decodeEscapes = (s) => String(s).replace(/\\\//g, '/').replace(/\\\\/g, '\\');
-
   const grab = (names) => {
     for (const name of names) {
       const re = new RegExp(`(?:var|let|const)\\s+${name}\\s*=\\s*("([^"\\\\]*(?:\\\\.[^"\\\\]*)*)"|'([^'\\\\]*(?:\\\\.[^'\\\\]*)*)')`);
       const m = html.match(re);
-      if (m) {
-        const raw = m[2] !== undefined ? m[2] : m[3];
-        if (raw) return decodeEscapes(raw);
-      }
+      if (m) { const raw = m[2] !== undefined ? m[2] : m[3]; if (raw) return decodeEscapes(raw); }
       const reJson = new RegExp(`"${name}"\\s*:\\s*"([^"]+)"`);
       const mj = html.match(reJson);
       if (mj && mj[1]) return decodeEscapes(mj[1]);
     }
     return "";
   };
-
   let src = grab(["src"]);
   let directSrc = grab(["directSrc"]);
   return { src: src.trim(), directSrc: directSrc.trim() };
@@ -751,16 +825,12 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
 
     const primaryRaw = finalVideoUrl || rawMp4OrM3u8;
     logger.log("MODIPLAY_PROXY_PROBE", "Probing primary (proxy-wrapped)", { target: primaryRaw.slice(0, 140) });
-
     let proxyRes = await findWorkingProxyVariant(primaryRaw, {}, PROXY_BASE, logger, "master");
 
     if (!proxyRes.ok && rawMp4OrM3u8 && rawMp4OrM3u8 !== primaryRaw) {
       logger.log("MODIPLAY_PROXY_FALLBACK", "Primary failed, trying directSrc through proxy", { target: rawMp4OrM3u8.slice(0, 140) });
       const fallbackRes = await findWorkingProxyVariant(rawMp4OrM3u8, {}, PROXY_BASE, logger, "master");
-      if (fallbackRes.ok) {
-        proxyRes = fallbackRes;
-        finalVideoUrl = rawMp4OrM3u8;
-      }
+      if (fallbackRes.ok) { proxyRes = fallbackRes; finalVideoUrl = rawMp4OrM3u8; }
     }
 
     const verifiedHeaders = proxyRes.ok ? proxyRes.headers : {};
@@ -777,16 +847,9 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
     };
 
     return {
-      success: true,
-      source: "modiplay",
-      topTwo: [streamObj],
-      player1: streamObj,
-      player2: null,
-      videoUrl: finalVideoUrl,
-      urlWithHeaders: verifiedUrlWithHeaders,
-      headers: verifiedHeaders,
-      quality: "auto",
-      debugLogs: logger.getLogs(),
+      success: true, source: "modiplay", topTwo: [streamObj], player1: streamObj, player2: null,
+      videoUrl: finalVideoUrl, urlWithHeaders: verifiedUrlWithHeaders, headers: verifiedHeaders,
+      quality: "auto", debugLogs: logger.getLogs(),
     };
   } catch (error) {
     logger.log("MODIPLAY_FATAL_ERROR", error.message);
@@ -1204,7 +1267,7 @@ async function extractCinemaos(title, tmdbId, imdbId, year, mediaType = "movie",
 }
 
 // ============================================================
-// MAIN HANDLER (updated with Bingr)
+// MAIN HANDLER
 // ============================================================
 
 module.exports = async (req, res) => {
@@ -1234,12 +1297,11 @@ module.exports = async (req, res) => {
     if ((source === "all" || source === "cinemaos") && id && title) {
       fetchTasks.push(extractCinemaos(title, id, imdb || null, year || null, mediaType, season, episode, isDebug));
     }
-    if ((source === "all" || source === "modiplay") && id) {
-      fetchTasks.push(extractModiplay(id, mediaType, season, episode, isDebug));
-    }
-    // ---- Bingr ----
     if ((source === "all" || source === "bingr") && id && title) {
       fetchTasks.push(extractBingr(title, id, year || null, mediaType, season, episode, isDebug));
+    }
+    if ((source === "all" || source === "modiplay") && id) {
+      fetchTasks.push(extractModiplay(id, mediaType, season, episode, isDebug));
     }
 
     const results = await Promise.all(fetchTasks);
