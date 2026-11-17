@@ -1,6 +1,6 @@
 /**
  * Quad Video Source API - Castle + Modiplay + MovieBox + CinemaOS + Bingr
- * Fixed for Vercel: Removed cloudscraper, routed Bingr via worker proxy, optimized timeouts.
+ * Final Vercel-optimized implementation.
  */
 
 const https = require("https");
@@ -81,7 +81,7 @@ function fetchUrl(urlString, options = {}) {
           "Accept-Encoding": "gzip, deflate, br",
           ...options.headers,
         },
-        timeout: options.timeout || 20000,
+        timeout: options.timeout || 15000,
       };
       const req = protocol.request(url, requestOptions, (res) => {
         const chunks = [];
@@ -250,7 +250,7 @@ function selectTopTwoStreams(streams) {
 }
 
 // ============================================================
-// BINGR API — Proxied via Worker, native fetch, optimized timeout
+// BINGR API — native fetch, proxy routing, Vercel safe
 // ============================================================
 
 function heightHintOf(text) {
@@ -324,21 +324,16 @@ function bingrSubtitles(jsonText) {
   } catch (e) { return []; }
 }
 
-/**
- * Fetches Bingr via Worker Proxy to bypass Cloudflare.
- * Vercel doesn't have native binaries to solve Cloudflare, and cloudscraper crashes it.
- */
 async function bingrFetch(url, options = {}, logger) {
-  // Route API requests through the worker proxy
   const combinedUrl = buildPipeUrl(url, options.headers || {});
   const proxyUrl = `${PROXY_BASE}?url=${encodeURIComponent(combinedUrl)}`;
 
   try {
     const res = await fetchUrl(proxyUrl, {
       method: options.method || "GET",
-      headers: { "Content-Type": "application/json" }, // Worker handles actual headers
+      headers: { "Content-Type": "application/json" },
       body: options.body,
-      timeout: options.timeout || 4000,
+      timeout: options.timeout || 3500, // Optimized for Vercel 10s limit
     });
     logger.log("BINGR_PROXY_OK", `${url.substring(0, 70)}: HTTP ${res.statusCode}`);
     return res.data;
@@ -437,13 +432,13 @@ async function extractBingr(title, tmdbId, year, mediaType = "movie", season = n
       throw new Error("Bingr: Invalid TMDB ID");
     }
 
-    // Primary: IndStream cascade (Reduced total deadline to 6s to fit Vercel)
+    // Primary: IndStream cascade
     let cascade = await bingrRunCascade(title, tmdbId, year, mediaType, season, episode, logger, {
       srvs: BINGR_SRVS,
       bodyFn: bingrBodyIndStream,
       maxSources: 6,
-      perRequestTimeout: 3000,
-      totalDeadlineMs: 6000,
+      perRequestTimeout: 3500,
+      totalDeadlineMs: 5000,
       useSpecialS40Get: true,
     });
 
@@ -454,7 +449,7 @@ async function extractBingr(title, tmdbId, year, mediaType = "movie", season = n
         srvs: BINGR_SRVS_MULTI,
         bodyFn: bingrBodyMulti,
         maxSources: 4,
-        perRequestTimeout: 3000,
+        perRequestTimeout: 3500,
         totalDeadlineMs: 4000,
         useSpecialS40Get: false,
       });
@@ -464,7 +459,6 @@ async function extractBingr(title, tmdbId, year, mediaType = "movie", season = n
       throw new Error("Bingr: No sources found from any server");
     }
 
-    // Build streams and probe playback via worker proxy
     const streamList = [];
     for (const s of cascade.sources) {
       const playbackHeaders = {
@@ -544,7 +538,7 @@ async function extractBingr(title, tmdbId, year, mediaType = "movie", season = n
 }
 
 // ============================================================
-// CASTLE API (unchanged)
+// CASTLE API
 // ============================================================
 
 function decrypt_castle(cipherText, securityKey) {
@@ -688,7 +682,7 @@ async function extractCastle(title, season = null, episode = null, isDebug = fal
 }
 
 // ============================================================
-// MODIPLAY API (unchanged)
+// MODIPLAY API
 // ============================================================
 
 function extractModiplaySrcVar(html) {
@@ -796,7 +790,7 @@ async function extractModiplay(mediaId, mediaType = "tv", season = null, episode
 }
 
 // ============================================================
-// MOVIEBOX API (unchanged)
+// MOVIEBOX API
 // ============================================================
 
 async function fetchMovieBoxBearerToken(logger, forceRefresh = false) {
@@ -1074,7 +1068,7 @@ async function extractMovieBox(title, mediaType = "movie", season = null, episod
 }
 
 // ============================================================
-// CINEMAOS API (unchanged)
+// CINEMAOS API
 // ============================================================
 
 async function extractCinemaos(title, tmdbId, imdbId, year, mediaType = "movie", season = null, episode = null, isDebug = false) {
@@ -1216,7 +1210,7 @@ module.exports = async (req, res) => {
 
   try {
     const { id, imdb, title, type = "tv", s, e, year, source = "all", debug } = req.query;
-    const isDebug = debug === "true" || debug === "1";
+    const isDebug = debug === "true" || debug === "1" || true; // Temporarily force debug to inspect output
 
     if (!id && !title) return res.status(400).json({ success: false, error: "Missing required parameter: 'id' or 'title'" });
 
