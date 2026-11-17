@@ -1,6 +1,6 @@
 /**
  * Quad Video Source API - Castle + Modiplay + MovieBox + CinemaOS + Bingr
- * Final Vercel-optimized implementation.
+ * Integrated with new worker: white-dream-529d.jaiveer4020y.workers.dev
  */
 
 const https = require("https");
@@ -26,8 +26,13 @@ const BINGR_ORIGIN = "https://bingr.one";
 const BINGR_SRVS = ["s40", "s70", "s80", "s81", "s62", "s63", "s30", "s60", "s61", "s31", "s3"];
 const BINGR_SRVS_MULTI = ["s40", "s70", "s62", "s63"];
 
+// ---- Proxies ----
+// Your new worker
+const PROXY_BASE = "https://white-dream-529d.jaiveer4020y.workers.dev";
+// Public CORS proxy fallback for Bingr POST requests
+const PROXY_BASE_FALLBACK = "https://corsproxy.io/?";
+
 const MOVIEBOX_REFERER = "https://movieboxonline.net/";
-const PROXY_BASE = "https://nameless-sea-60f9.jaiveer55555500.workers.dev";
 
 const CASTLE_CONFIG = {
   channel: "IndiaA", clientType: "1", lang: "en-US",
@@ -250,7 +255,7 @@ function selectTopTwoStreams(streams) {
 }
 
 // ============================================================
-// BINGR API — native fetch, proxy routing, Vercel safe
+// BINGR API — Dual-proxy fallback
 // ============================================================
 
 function heightHintOf(text) {
@@ -324,23 +329,36 @@ function bingrSubtitles(jsonText) {
   } catch (e) { return []; }
 }
 
+/**
+ * Dual-proxy fetch for Bingr.
+ */
 async function bingrFetch(url, options = {}, logger) {
   const combinedUrl = buildPipeUrl(url, options.headers || {});
-  const proxyUrl = `${PROXY_BASE}?url=${encodeURIComponent(combinedUrl)}`;
+  const encodedTarget = encodeURIComponent(combinedUrl);
 
-  try {
-    const res = await fetchUrl(proxyUrl, {
-      method: options.method || "GET",
-      headers: { "Content-Type": "application/json" },
-      body: options.body,
-      timeout: options.timeout || 3500, // Optimized for Vercel 10s limit
-    });
-    logger.log("BINGR_PROXY_OK", `${url.substring(0, 70)}: HTTP ${res.statusCode}`);
-    return res.data;
-  } catch (e) {
-    logger.log("BINGR_PROXY_FAIL", `${url.substring(0, 70)}: ${e.message.substring(0, 80)}`);
-    throw e;
+  const proxies = [
+    { name: "primary", url: `${PROXY_BASE}?url=${encodedTarget}` },
+    { name: "fallback", url: `${PROXY_BASE_FALLBACK}${encodeURIComponent(combinedUrl)}` },
+  ];
+
+  let lastError = null;
+  for (const proxy of proxies) {
+    try {
+      const res = await fetchUrl(proxy.url, {
+        method: options.method || "GET",
+        headers: { "Content-Type": "application/json" },
+        body: options.body,
+        timeout: options.timeout || 3500, // Safe for Vercel 10s limit
+      });
+      logger.log("BINGR_PROXY_OK", `${proxy.name} → ${url.substring(0, 70)}: HTTP ${res.statusCode}`);
+      return res.data;
+    } catch (e) {
+      lastError = e;
+      logger.log("BINGR_PROXY_FAIL", `${proxy.name} → ${url.substring(0, 70)}: ${e.message.substring(0, 80)}`);
+    }
   }
+
+  throw lastError || new Error("All proxies failed");
 }
 
 async function bingrRunCascade(title, tmdbId, year, mediaType, season, episode, logger, opts) {
@@ -432,7 +450,6 @@ async function extractBingr(title, tmdbId, year, mediaType = "movie", season = n
       throw new Error("Bingr: Invalid TMDB ID");
     }
 
-    // Primary: IndStream cascade
     let cascade = await bingrRunCascade(title, tmdbId, year, mediaType, season, episode, logger, {
       srvs: BINGR_SRVS,
       bodyFn: bingrBodyIndStream,
@@ -442,7 +459,6 @@ async function extractBingr(title, tmdbId, year, mediaType = "movie", season = n
       useSpecialS40Get: true,
     });
 
-    // Fallback: Multimovies format
     if (cascade.sources.length === 0) {
       logger.log("BINGR_FALLBACK", "IndStream format yielded 0, trying Multimovies format");
       cascade = await bingrRunCascade(title, tmdbId, year, mediaType, season, episode, logger, {
@@ -1210,7 +1226,7 @@ module.exports = async (req, res) => {
 
   try {
     const { id, imdb, title, type = "tv", s, e, year, source = "all", debug } = req.query;
-    const isDebug = debug === "true" || debug === "1" || true; // Temporarily force debug to inspect output
+    const isDebug = debug === "true" || debug === "1";
 
     if (!id && !title) return res.status(400).json({ success: false, error: "Missing required parameter: 'id' or 'title'" });
 
